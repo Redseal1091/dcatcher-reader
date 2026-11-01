@@ -19,6 +19,7 @@ const mime = {
   '.otf': 'font/otf',
   '.woff': 'font/woff',
   '.woff2': 'font/woff2',
+  '.apk': 'application/vnd.android.package-archive',
 };
 
 function handleRequest(req, res) {
@@ -58,8 +59,10 @@ server8080.listen(8080, '0.0.0.0', () => {
 server3000.listen(3000, '0.0.0.0', () => {
   console.log(`\n======================================================`);
   console.log(`🚀 СЕРВЕР РАБОТАЕТ!`);
-  console.log(`📱 Откройте на телефоне (обязательно с http://):`);
+  console.log(`📱 Откройте Web на телефоне:`);
   console.log(`👉 http://192.168.123.19:8080`);
   console.log(`👉 http://192.168.123.19:3000  (запасной порт)`);
+  console.log(`\n📥 Скачать APK прямо на телефон по Wi-Fi:`);
+  console.log(`👉 http://192.168.123.19:8080/dcatcher.apk`);
   console.log(`======================================================\n`);
 });
