@@ -34,15 +34,24 @@ class _WebtoonReaderScreenState extends State<WebtoonReaderScreen> {
   bool _showControls = true;
   bool _isOffline = false;
   final ScrollController _scrollController = ScrollController();
+  final Set<int> _preloadedIndices = {};
 
   // Автоскролл
   Timer? _autoScrollTimer;
   double _autoScrollSpeed = 0.0; // 0 = выключен, 1.0, 1.5, 2.0
 
+  static const Map<String, String> _imageHeaders = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Referer': 'https://remanga.org/',
+    'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+  };
+
   @override
   void initState() {
     super.initState();
     _loadPages();
+    _scrollController.addListener(_onScroll);
+
     // Автоматически фиксируем главу и статус чтения
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final library = context.read<LibraryProvider>();
@@ -54,6 +63,33 @@ class _WebtoonReaderScreenState extends State<WebtoonReaderScreen> {
         coverUrl: widget.manga.coverUrl,
       );
     });
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients || _pageUrls.isEmpty) return;
+    final maxScroll = _scrollController.position.maxScrollExtent;
+    if (maxScroll <= 0) return;
+
+    final progress = (_scrollController.offset / maxScroll).clamp(0.0, 1.0);
+    final approxCurrentIndex = (progress * _pageUrls.length).floor();
+
+    // Заблаговременно предзагружаем следующие 6 изображений в фоне
+    _preloadUpcomingImages(approxCurrentIndex, 6);
+  }
+
+  void _preloadUpcomingImages(int startIndex, int count) {
+    if (!mounted || _isOffline) return;
+    for (int i = startIndex; i < startIndex + count && i < _pageUrls.length; i++) {
+      if (i < 0 || _preloadedIndices.contains(i)) continue;
+      _preloadedIndices.add(i);
+      final url = _pageUrls[i];
+      if (!url.startsWith('http')) continue;
+
+      precacheImage(
+        CachedNetworkImageProvider(url, headers: _imageHeaders),
+        context,
+      ).catchError((_) {});
+    }
   }
 
   Future<void> _loadPages() async {
@@ -77,6 +113,11 @@ class _WebtoonReaderScreenState extends State<WebtoonReaderScreen> {
         _pageUrls = pages;
         _isOffline = false;
         _isLoading = false;
+      });
+
+      // Мгновенно запускаем упреждающую предзагрузку первых 5 страниц
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _preloadUpcomingImages(0, 5);
       });
     }
   }
@@ -121,6 +162,7 @@ class _WebtoonReaderScreenState extends State<WebtoonReaderScreen> {
   @override
   void dispose() {
     _autoScrollTimer?.cancel();
+    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
   }
@@ -133,7 +175,7 @@ class _WebtoonReaderScreenState extends State<WebtoonReaderScreen> {
         children: [
           if (_isLoading)
             const Center(
-              child: CircularProgressIndicator(color: ShadcnColors.primary),
+              child: CircularProgressIndicator(),
             )
           else if (_pageUrls.isEmpty)
             Center(
@@ -169,6 +211,7 @@ class _WebtoonReaderScreenState extends State<WebtoonReaderScreen> {
             )
           else
             GestureDetector(
+              behavior: HitTestBehavior.translucent,
               onTap: () {
                 if (_autoScrollSpeed > 0) {
                   _stopAutoScroll();
@@ -180,39 +223,22 @@ class _WebtoonReaderScreenState extends State<WebtoonReaderScreen> {
                 controller: _scrollController,
                 padding: EdgeInsets.zero,
                 itemCount: _pageUrls.length,
-                cacheExtent: 2000,
+                cacheExtent: 3500, // Увеличенный кэш-буфер для плавного скролла без дерганий
                 itemBuilder: (context, index) {
                   final path = _pageUrls[index];
 
-                  // Офлайн рендеринг из памяти телефона
-                  if (_isOffline) {
-                    return Image.file(
-                      File(path),
-                      fit: BoxFit.fitWidth,
-                    );
-                  }
-
-                  // Онлайн рендеринг
-                  return CachedNetworkImage(
-                    imageUrl: path,
-                    fit: BoxFit.fitWidth,
-                    placeholder: (context, url) => Container(
-                      height: 450,
-                      color: const Color(0xFF121215),
-                      child: const Center(
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Color(0xFF27272A),
-                        ),
-                      ),
-                    ),
-                    errorWidget: (context, url, err) => Container(
-                      height: 250,
-                      color: const Color(0xFF18181B),
-                      child: const Center(
-                        child: Icon(Icons.broken_image, color: Color(0xFFA1A1AA)),
-                      ),
-                    ),
+                  return _WebtoonZoomablePage(
+                    path: path,
+                    index: index,
+                    isOffline: _isOffline,
+                    headers: _imageHeaders,
+                    onTap: () {
+                      if (_autoScrollSpeed > 0) {
+                        _stopAutoScroll();
+                      } else {
+                        setState(() => _showControls = !_showControls);
+                      }
+                    },
                   );
                 },
               ),
@@ -220,7 +246,8 @@ class _WebtoonReaderScreenState extends State<WebtoonReaderScreen> {
 
           // Верхняя матовая навигация
           AnimatedPositioned(
-            duration: const Duration(milliseconds: 200),
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeInOutCubic,
             top: _showControls ? 0 : -100,
             left: 0,
             right: 0,
@@ -352,8 +379,9 @@ class _WebtoonReaderScreenState extends State<WebtoonReaderScreen> {
 
           // Нижняя плавающая матовая плашка управления
           AnimatedPositioned(
-            duration: const Duration(milliseconds: 200),
-            bottom: _showControls ? 20 : -80,
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeInOutCubic,
+            bottom: _showControls ? 20 : -90,
             left: 20,
             right: 20,
             child: SafeArea(
@@ -363,12 +391,26 @@ class _WebtoonReaderScreenState extends State<WebtoonReaderScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      'Страниц: ${_pageUrls.length}',
-                      style: const TextStyle(
-                        color: ShadcnColors.mutedForeground,
-                        fontSize: 12,
-                      ),
+                    Row(
+                      children: [
+                        const Icon(Icons.zoom_in, size: 16, color: ShadcnColors.mutedForeground),
+                        const SizedBox(width: 4),
+                        const Text(
+                          'Увеличение пальцами',
+                          style: TextStyle(
+                            color: ShadcnColors.mutedForeground,
+                            fontSize: 11,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '•  ${_pageUrls.length} стр.',
+                          style: const TextStyle(
+                            color: ShadcnColors.mutedForeground,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
                     ),
                     Consumer<LibraryProvider>(
                       builder: (context, library, _) {
@@ -401,6 +443,147 @@ class _WebtoonReaderScreenState extends State<WebtoonReaderScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Виджет полотна страницы вебтуна с поддержкой увеличения пальцами (Pinch-to-zoom)
+/// и двойного нажатия (Double-tap zoom)
+class _WebtoonZoomablePage extends StatefulWidget {
+  final String path;
+  final int index;
+  final bool isOffline;
+  final Map<String, String> headers;
+  final VoidCallback onTap;
+
+  const _WebtoonZoomablePage({
+    required this.path,
+    required this.index,
+    required this.isOffline,
+    required this.headers,
+    required this.onTap,
+  });
+
+  @override
+  State<_WebtoonZoomablePage> createState() => _WebtoonZoomablePageState();
+}
+
+class _WebtoonZoomablePageState extends State<_WebtoonZoomablePage> with SingleTickerProviderStateMixin {
+  final TransformationController _transformController = TransformationController();
+  late AnimationController _animationController;
+  Animation<Matrix4>? _zoomAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 220),
+    )..addListener(() {
+        if (_zoomAnimation != null) {
+          _transformController.value = _zoomAnimation!.value;
+        }
+      });
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    _transformController.dispose();
+    super.dispose();
+  }
+
+  void _handleDoubleTap(TapDownDetails details) {
+    final currentScale = _transformController.value.getMaxScaleOnAxis();
+
+    if (currentScale > 1.05) {
+      // Возвращаем в нормальный масштаб
+      _zoomAnimation = Matrix4Tween(
+        begin: _transformController.value,
+        end: Matrix4.identity(),
+      ).animate(CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic));
+      _animationController.forward(from: 0);
+    } else {
+      // Увеличиваем в точку двойного клика
+      final position = details.localPosition;
+      final target = Matrix4.identity()
+        ..translate(-position.dx * 1.2, -position.dy * 1.2)
+        ..scale(2.2);
+
+      _zoomAnimation = Matrix4Tween(
+        begin: _transformController.value,
+        end: target,
+      ).animate(CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic));
+      _animationController.forward(from: 0);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onDoubleTapDown: _handleDoubleTap,
+      onDoubleTap: () {},
+      child: InteractiveViewer(
+        transformationController: _transformController,
+        minScale: 1.0,
+        maxScale: 4.5,
+        clipBehavior: Clip.none,
+        panEnabled: true,
+        scaleEnabled: true,
+        child: widget.isOffline
+            ? Image.file(
+                File(widget.path),
+                fit: BoxFit.fitWidth,
+              )
+            : CachedNetworkImage(
+                imageUrl: widget.path,
+                httpHeaders: widget.headers,
+                fit: BoxFit.fitWidth,
+                memCacheWidth: 1080,
+                fadeInDuration: const Duration(milliseconds: 180),
+                placeholder: (context, url) => Container(
+                  height: 400,
+                  color: const Color(0xFF101014),
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        SizedBox(
+                          width: 28,
+                          height: 28,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: ShadcnColors.primary.withValues(alpha: 0.6),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          'Стр. ${widget.index + 1}',
+                          style: const TextStyle(color: ShadcnColors.mutedForeground, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                errorWidget: (context, url, err) => Container(
+                  height: 200,
+                  color: const Color(0xFF18181B),
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.broken_image, color: ShadcnColors.mutedForeground, size: 28),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Стр. ${widget.index + 1} не загрузилась',
+                          style: const TextStyle(color: ShadcnColors.mutedForeground, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
       ),
     );
   }

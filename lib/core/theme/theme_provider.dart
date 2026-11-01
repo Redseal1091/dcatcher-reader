@@ -40,7 +40,7 @@ class AppSettingsProvider extends ChangeNotifier {
   String _manhuaSource = 'Remanga';
   String _mangaSource = 'Remanga';
   String _ranobeSource = 'DCatcher Novels';
-  String _booksSource = 'Открытая библиотека классики';
+  String _booksSource = 'Флибуста (Flibusta)';
 
   AppThemeShade get themeShade => _themeShade;
   bool get allowAdultContent => _allowAdultContent;
@@ -65,7 +65,8 @@ class AppSettingsProvider extends ChangeNotifier {
           border: Color(0xFF262626),
           primary: Color(0xFFFFFFFF),
           primaryForeground: Color(0xFF000000),
-          accent: Color(0xFF3B82F6),
+          accent: Color(0xFF38BDF8),
+          mutedForeground: Color(0xFFA1A1AA),
         );
       case AppThemeShade.paprika:
         return const ThemeColors(
@@ -109,6 +110,7 @@ class AppSettingsProvider extends ChangeNotifier {
           primary: Color(0xFFFAFAFA),
           primaryForeground: Color(0xFF09090B),
           accent: Color(0xFF3B82F6),
+          mutedForeground: Color(0xFFA1A1AA),
         );
     }
   }

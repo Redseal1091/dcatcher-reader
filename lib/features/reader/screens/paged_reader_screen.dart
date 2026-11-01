@@ -30,6 +30,13 @@ class _PagedReaderScreenState extends State<PagedReaderScreen> {
   bool _showControls = true;
   int _currentIndex = 0;
   final PageController _pageController = PageController();
+  final Set<int> _preloadedIndices = {};
+
+  static const Map<String, String> _imageHeaders = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Referer': 'https://remanga.org/',
+    'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+  };
 
   @override
   void initState() {
@@ -47,12 +54,33 @@ class _PagedReaderScreenState extends State<PagedReaderScreen> {
     });
   }
 
+  void _preloadAdjacentPages(int currentIndex) {
+    if (!mounted || _pageUrls.isEmpty) return;
+    for (int offset in [-1, 1, 2, 3]) {
+      final target = currentIndex + offset;
+      if (target >= 0 && target < _pageUrls.length && !_preloadedIndices.contains(target)) {
+        _preloadedIndices.add(target);
+        final url = _pageUrls[target];
+        if (url.startsWith('http')) {
+          precacheImage(
+            CachedNetworkImageProvider(url, headers: _imageHeaders),
+            context,
+          ).catchError((_) {});
+        }
+      }
+    }
+  }
+
   Future<void> _loadPages() async {
     final pages = await _source.getChapterPages(widget.chapter.id);
     if (mounted) {
       setState(() {
         _pageUrls = pages;
         _isLoading = false;
+      });
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _preloadAdjacentPages(0);
       });
     }
   }
@@ -71,7 +99,7 @@ class _PagedReaderScreenState extends State<PagedReaderScreen> {
         children: [
           if (_isLoading)
             const Center(
-              child: CircularProgressIndicator(color: ShadcnColors.primary),
+              child: CircularProgressIndicator(),
             )
           else
             GestureDetector(
@@ -80,19 +108,28 @@ class _PagedReaderScreenState extends State<PagedReaderScreen> {
                 controller: _pageController,
                 reverse: true, // Постранично справа-налево (традиционная манга)
                 itemCount: _pageUrls.length,
-                onPageChanged: (i) => setState(() => _currentIndex = i),
+                onPageChanged: (i) {
+                  setState(() => _currentIndex = i);
+                  _preloadAdjacentPages(i);
+                },
                 itemBuilder: (context, index) {
                   return InteractiveViewer(
-                    maxScale: 3.0,
+                    minScale: 1.0,
+                    maxScale: 4.0,
                     child: Center(
                       child: CachedNetworkImage(
                         imageUrl: _pageUrls[index],
+                        httpHeaders: _imageHeaders,
                         fit: BoxFit.contain,
-                        placeholder: (context, url) => const Center(
+                        memCacheWidth: 1080,
+                        placeholder: (context, url) => Center(
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color: ShadcnColors.border,
+                            color: ShadcnColors.primary.withValues(alpha: 0.5),
                           ),
+                        ),
+                        errorWidget: (context, url, err) => const Center(
+                          child: Icon(Icons.broken_image, color: ShadcnColors.mutedForeground, size: 36),
                         ),
                       ),
                     ),
@@ -104,6 +141,7 @@ class _PagedReaderScreenState extends State<PagedReaderScreen> {
           // Верхний аппбар
           AnimatedPositioned(
             duration: const Duration(milliseconds: 200),
+            curve: Curves.easeInOutCubic,
             top: _showControls ? 0 : -90,
             left: 0,
             right: 0,
@@ -141,6 +179,7 @@ class _PagedReaderScreenState extends State<PagedReaderScreen> {
           // Нижняя плашка с номером страницы
           AnimatedPositioned(
             duration: const Duration(milliseconds: 200),
+            curve: Curves.easeInOutCubic,
             bottom: _showControls ? 20 : -70,
             left: 0,
             right: 0,

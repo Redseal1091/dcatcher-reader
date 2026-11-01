@@ -9,6 +9,8 @@ import '../../library/state/library_provider.dart';
 import 'widgets/manga_card.dart';
 import 'widgets/filter_bottom_sheet.dart';
 import 'manga_detail_screen.dart';
+import '../../sources/manga_source.dart';
+import '../../sources/source_manager.dart';
 import '../../books/screens/books_catalog_screen.dart';
 import '../../novel_reader/screens/ranobe_catalog_screen.dart';
 import '../../settings/screens/settings_screen.dart';
@@ -353,11 +355,71 @@ class _CatalogScreenState extends State<CatalogScreen> {
             else if (_activeSection == CatalogSection.ranobe)
               const Expanded(child: RanobeCatalogScreen())
             else ...[
-              // Поисковая панель + кнопка фильтров
+              // Поисковая панель + выбор источника + кнопка фильтров
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                 child: Row(
                   children: [
+                    // Селектор источника
+                    PopupMenuButton<MangaSource>(
+                      initialValue: catalog.source,
+                      tooltip: 'Сменить источник каталога',
+                      onSelected: (newSource) {
+                        catalog.switchSource(newSource, libraryProvider: library);
+                      },
+                      itemBuilder: (ctx) => SourceManager.sources
+                          .map((s) => PopupMenuItem<MangaSource>(
+                                value: s,
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      s.id == 'asura'
+                                          ? Icons.bolt
+                                          : s.id == 'mangalib'
+                                              ? Icons.menu_book
+                                              : s.id == 'mangabuff'
+                                                  ? Icons.bubble_chart
+                                                  : Icons.auto_stories,
+                                      size: 16,
+                                      color: s.id == catalog.source.id ? ShadcnColors.primary : ShadcnColors.mutedForeground,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      s.name,
+                                      style: TextStyle(
+                                        color: s.id == catalog.source.id ? ShadcnColors.primary : ShadcnColors.foreground,
+                                        fontWeight: s.id == catalog.source.id ? FontWeight.bold : FontWeight.normal,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ))
+                          .toList(),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: ShadcnColors.surface,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: ShadcnColors.border),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.hub_outlined, color: ShadcnColors.primary, size: 15),
+                            const SizedBox(width: 5),
+                            Text(
+                              catalog.source.name,
+                              style: const TextStyle(color: ShadcnColors.foreground, fontSize: 12, fontWeight: FontWeight.w700),
+                            ),
+                            const SizedBox(width: 2),
+                            const Icon(Icons.arrow_drop_down, color: ShadcnColors.mutedForeground, size: 16),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+
                     Expanded(
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -368,16 +430,16 @@ class _CatalogScreenState extends State<CatalogScreen> {
                         ),
                         child: TextField(
                           controller: _searchCtrl,
-                          style: const TextStyle(color: ShadcnColors.foreground, fontSize: 14),
+                          style: const TextStyle(color: ShadcnColors.foreground, fontSize: 13),
                           cursorColor: ShadcnColors.foreground,
                           decoration: InputDecoration(
                             hintText: 'Поиск ${_currentSectionLabel.toLowerCase()}...',
-                            hintStyle: const TextStyle(color: ShadcnColors.mutedForeground, fontSize: 13),
-                            icon: const Icon(Icons.search, color: ShadcnColors.mutedForeground, size: 20),
+                            hintStyle: const TextStyle(color: ShadcnColors.mutedForeground, fontSize: 12),
+                            icon: const Icon(Icons.search, color: ShadcnColors.mutedForeground, size: 18),
                             border: InputBorder.none,
                             suffixIcon: _searchCtrl.text.isNotEmpty
                                 ? IconButton(
-                                    icon: const Icon(Icons.clear, color: ShadcnColors.mutedForeground, size: 18),
+                                    icon: const Icon(Icons.clear, color: ShadcnColors.mutedForeground, size: 16),
                                     onPressed: () {
                                       _searchCtrl.clear();
                                       catalog.filters.searchQuery = '';

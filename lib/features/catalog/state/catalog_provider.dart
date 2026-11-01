@@ -6,7 +6,7 @@ import '../../sources/source_manager.dart';
 import '../../library/state/library_provider.dart';
 
 class CatalogProvider extends ChangeNotifier {
-  final MangaSource _source = SourceManager.currentSource;
+  MangaSource _source = SourceManager.currentSource;
   CatalogFilters _filters = CatalogFilters();
   
   List<Manga> _allManga = [];
@@ -14,6 +14,7 @@ class CatalogProvider extends ChangeNotifier {
   bool _isLoading = false;
   String? _errorMessage;
 
+  MangaSource get source => _source;
   CatalogFilters get filters => _filters;
   List<Manga> get mangaList => _filteredManga;
   bool get isLoading => _isLoading;
@@ -21,6 +22,12 @@ class CatalogProvider extends ChangeNotifier {
 
   CatalogProvider() {
     loadCatalog();
+  }
+
+  void switchSource(MangaSource newSource, {LibraryProvider? libraryProvider}) {
+    _source = newSource;
+    SourceManager.currentSource = newSource;
+    loadCatalog(libraryProvider: libraryProvider);
   }
 
   Future<void> loadCatalog({LibraryProvider? libraryProvider}) async {

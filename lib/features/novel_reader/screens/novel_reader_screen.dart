@@ -79,13 +79,25 @@ class _NovelReaderScreenState extends State<NovelReaderScreen> {
                   const SizedBox(height: 10),
                   Row(
                     children: [
-                      _buildThemeCircle(NovelReaderTheme.zincDark, 'Zinc', const Color(0xFF09090B), settings),
+                      _buildThemeCircle(NovelReaderTheme.zincDark, 'Zinc', const Color(0xFF09090B), settings, () {
+                        settings.setTheme(NovelReaderTheme.zincDark);
+                        setModalState(() {});
+                      }),
                       const SizedBox(width: 12),
-                      _buildThemeCircle(NovelReaderTheme.oledDark, 'OLED', Colors.black, settings),
+                      _buildThemeCircle(NovelReaderTheme.oledDark, 'OLED', Colors.black, settings, () {
+                        settings.setTheme(NovelReaderTheme.oledDark);
+                        setModalState(() {});
+                      }),
                       const SizedBox(width: 12),
-                      _buildThemeCircle(NovelReaderTheme.warmSepia, 'Сепия', const Color(0xFF1E1A16), settings),
+                      _buildThemeCircle(NovelReaderTheme.warmSepia, 'Сепия', const Color(0xFF1E1A16), settings, () {
+                        settings.setTheme(NovelReaderTheme.warmSepia);
+                        setModalState(() {});
+                      }),
                       const SizedBox(width: 12),
-                      _buildThemeCircle(NovelReaderTheme.softGreen, 'Мята', const Color(0xFF0F1A14), settings),
+                      _buildThemeCircle(NovelReaderTheme.softGreen, 'Мята', const Color(0xFF0F1A14), settings, () {
+                        settings.setTheme(NovelReaderTheme.softGreen);
+                        setModalState(() {});
+                      }),
                     ],
                   ),
 
@@ -151,10 +163,10 @@ class _NovelReaderScreenState extends State<NovelReaderScreen> {
     );
   }
 
-  Widget _buildThemeCircle(NovelReaderTheme theme, String name, Color bg, ReaderSettings settings) {
+  Widget _buildThemeCircle(NovelReaderTheme theme, String name, Color bg, ReaderSettings settings, VoidCallback onSelect) {
     final isSelected = settings.theme == theme;
     return GestureDetector(
-      onTap: () => settings.setTheme(theme),
+      onTap: onSelect,
       child: Column(
         children: [
           Container(

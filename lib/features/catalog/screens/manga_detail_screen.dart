@@ -25,7 +25,13 @@ class MangaDetailScreen extends StatefulWidget {
 }
 
 class _MangaDetailScreenState extends State<MangaDetailScreen> {
-  final MangaSource _source = SourceManager.currentSource;
+  MangaSource get _source {
+    final id = widget.manga.id;
+    if (id.startsWith('asura_')) return SourceManager.asura;
+    if (id.startsWith('mangalib_')) return SourceManager.mangalib;
+    if (id.startsWith('buff_')) return SourceManager.mangabuff;
+    return SourceManager.currentSource;
+  }
   final ScrollController _scrollController = ScrollController();
   List<Chapter> _chapters = [];
   bool _isLoadingChapters = true;

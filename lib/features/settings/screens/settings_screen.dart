@@ -237,21 +237,21 @@ class SettingsScreen extends StatelessWidget {
             catalogName: 'Манхва (Корея)',
             icon: Icons.auto_stories,
             currentSource: settings.manhwaSource,
-            options: const ['Remanga', 'MangaDex (Mirror)', 'Asura Scans'],
+            options: const ['Remanga', 'Asura Scans', 'MangaLib', 'MangaDex (Mirror)'],
             onSelect: (s) => settings.setSource('manhwa', s),
           ),
           _buildSourceTile(
             catalogName: 'Маньхуа (Китай)',
             icon: Icons.bubble_chart,
             currentSource: settings.manhuaSource,
-            options: const ['Remanga', 'MangaBuff', 'MangaDex'],
+            options: const ['Remanga', 'MangaBuff', 'MangaLib', 'MangaDex'],
             onSelect: (s) => settings.setSource('manhua', s),
           ),
           _buildSourceTile(
             catalogName: 'Манга (Япония)',
             icon: Icons.menu_book,
             currentSource: settings.mangaSource,
-            options: const ['Remanga', 'MangaDex', 'MangaLib'],
+            options: const ['Remanga', 'MangaLib', 'MangaDex', 'Asura Scans'],
             onSelect: (s) => settings.setSource('manga', s),
           ),
           _buildSourceTile(
@@ -265,7 +265,7 @@ class SettingsScreen extends StatelessWidget {
             catalogName: 'Книги (Художественные)',
             icon: Icons.book,
             currentSource: settings.booksSource,
-            options: const ['Открытая библиотека классики', 'Project Gutenberg RU', 'Мои файлы (.txt/.fb2)'],
+            options: const ['Флибуста (Flibusta)', 'Открытая библиотека классики', 'Мои файлы (.txt/.fb2)'],
             onSelect: (s) => settings.setSource('books', s),
           ),
         ],
@@ -281,55 +281,73 @@ class SettingsScreen extends StatelessWidget {
     required bool isSelected,
     required VoidCallback onTap,
   }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0x33E11D48) : ShadcnColors.card,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: isSelected ? const Color(0xFFE11D48) : ShadcnColors.border,
-            width: isSelected ? 1.5 : 1,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? accentColor.withValues(alpha: 0.16) : ShadcnColors.card,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isSelected ? accentColor : ShadcnColors.border,
+              width: isSelected ? 2.0 : 1.0,
+            ),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: accentColor.withValues(alpha: 0.3),
+                      blurRadius: 10,
+                      spreadRadius: 1,
+                    )
+                  ]
+                : null,
           ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 14,
-              height: 14,
-              decoration: BoxDecoration(
-                color: accentColor,
-                shape: BoxShape.circle,
-                border: Border.all(color: ShadcnColors.border),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 16,
+                height: 16,
+                decoration: BoxDecoration(
+                  color: accentColor,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.4), width: 1),
+                ),
+                child: isSelected
+                    ? const Center(
+                        child: Icon(Icons.check, size: 10, color: Colors.black),
+                      )
+                    : null,
               ),
-            ),
-            const SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    color: isSelected ? Colors.white : ShadcnColors.foreground,
-                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                    fontSize: 12,
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : ShadcnColors.foreground,
+                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                      fontSize: 12,
+                    ),
                   ),
-                ),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    color: ShadcnColors.mutedForeground,
-                    fontSize: 10,
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: isSelected ? Colors.white70 : ShadcnColors.mutedForeground,
+                      fontSize: 10,
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

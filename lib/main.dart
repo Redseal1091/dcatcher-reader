@@ -11,11 +11,15 @@ import 'features/library/screens/library_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // Увеличиваем лимиты кэша изображений в памяти для мгновенного перелистывания страниц без задержек
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 256 * 1024 * 1024; // 256 MB
+  PaintingBinding.instance.imageCache.maximumSize = 300;
+
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
       statusBarIconBrightness: Brightness.light,
-      systemNavigationBarColor: ShadcnColors.background,
+      systemNavigationBarColor: Colors.transparent,
       systemNavigationBarIconBrightness: Brightness.light,
     ),
   );
@@ -73,9 +77,11 @@ class _AppNavigationShellState extends State<AppNavigationShell> {
   Widget build(BuildContext context) {
     return Scaffold(
       extendBody: true,
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
+      body: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 200),
+        switchInCurve: Curves.easeOut,
+        switchOutCurve: Curves.easeIn,
+        child: _screens[_currentIndex],
       ),
       bottomNavigationBar: SafeArea(
         child: Padding(
@@ -120,21 +126,31 @@ class _AppNavigationShellState extends State<AppNavigationShell> {
       child: InkWell(
         onTap: () => setState(() => _currentIndex = index),
         borderRadius: BorderRadius.circular(12),
-        child: Padding(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          curve: Curves.easeOutCubic,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected ? ShadcnColors.primary.withValues(alpha: 0.12) : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+          ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                currentIcon,
-                size: 20,
-                color: itemColor,
+              AnimatedScale(
+                scale: isSelected ? 1.08 : 1.0,
+                duration: const Duration(milliseconds: 150),
+                child: Icon(
+                  currentIcon,
+                  size: 20,
+                  color: isSelected ? ShadcnColors.primary : itemColor,
+                ),
               ),
               const SizedBox(width: 8),
               Text(
                 label,
                 style: TextStyle(
-                  color: itemColor,
+                  color: isSelected ? ShadcnColors.foreground : itemColor,
                   fontSize: 14,
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
                   letterSpacing: -0.2,
