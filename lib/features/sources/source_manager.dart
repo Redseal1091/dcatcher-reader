@@ -6,21 +6,22 @@ import 'mangalib/mangalib_api.dart';
 import 'mangabuff/mangabuff_api.dart';
 
 class SourceManager {
-  static final RemangaSource remanga = RemangaSource();
   static final MangaDexSource mangadex = MangaDexSource();
   static final AsuraScansSource asura = AsuraScansSource();
   static final MangaLibSource mangalib = MangaLibSource();
   static final MangaBuffSource mangabuff = MangaBuffSource();
+  static final RemangaSource remanga = RemangaSource();
 
   static final List<MangaSource> sources = [
-    remanga,
+    mangadex,
     asura,
     mangalib,
     mangabuff,
-    mangadex,
+    remanga,
   ];
 
-  static MangaSource currentSource = remanga;
+  // По умолчанию используем глобальный открытый источник без региональных блокировок
+  static MangaSource currentSource = mangadex;
 
   static MangaSource getSourceById(String id) {
     return sources.firstWhere(

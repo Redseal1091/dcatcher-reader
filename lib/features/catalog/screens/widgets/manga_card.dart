@@ -139,24 +139,6 @@ class _MangaCardState extends State<MangaCard> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            if (manga.isLicensed)
-                              Container(
-                                margin: const EdgeInsets.only(right: 4),
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: const Color(0x33EF4444),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(color: const Color(0x88EF4444)),
-                                ),
-                                child: const Text(
-                                  'Лицензия',
-                                  style: TextStyle(
-                                    color: Color(0xFFEF4444),
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
                             if (manga.contentRating != ContentRating.safe)
                               ShadcnBadge(
                                 label: manga.ratingLabel,

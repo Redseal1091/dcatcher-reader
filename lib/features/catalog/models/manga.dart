@@ -25,6 +25,7 @@ class Manga {
   final int? releaseYear;
   final bool isLicensed;
   final int totalChapters;
+  final String sourceId;
 
   const Manga({
     required this.id,
@@ -40,6 +41,7 @@ class Manga {
     this.releaseYear,
     this.isLicensed = false,
     this.totalChapters = 0,
+    this.sourceId = 'remanga',
   });
 
   String get statusLabel {

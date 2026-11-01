@@ -88,11 +88,6 @@ class RemangaSource implements MangaSource {
     final mainName = item['main_name'] as String? ?? 'Без названия';
     final secondaryName = item['secondary_name'] as String?;
 
-    // Проверка на статус лицензирования
-    final isLicensed = item['is_licensed'] == true ||
-        (item['status'] is Map && item['status']['name'] == 'Лицензировано') ||
-        (item['status'] is Map && item['status']['id'] == 6);
-
     // Тип (Манхва / Манга / Маньхуа)
     final typeObj = item['type'];
     final typeName = (typeObj is Map ? typeObj['name'] : '')?.toString().toLowerCase() ?? '';
@@ -158,8 +153,9 @@ class RemangaSource implements MangaSource {
       status: statusStr,
       ratingScore: ratingScore,
       releaseYear: item['issue_year'] as int?,
-      isLicensed: isLicensed,
+      isLicensed: false, // Отключено для пользователей вне РФ — полный свободный доступ
       totalChapters: chaptersCount,
+      sourceId: 'remanga',
     );
   }
 
@@ -196,7 +192,6 @@ class RemangaSource implements MangaSource {
           final chName = c['name']?.toString() ?? '';
           final pubList = c['publishers'] as List<dynamic>? ?? [];
           final pubName = pubList.isNotEmpty ? pubList[0]['name'] : 'Переводчики';
-          final isPaid = c['is_paid'] == true;
 
           return Chapter(
             id: c['id'].toString(),
@@ -205,7 +200,7 @@ class RemangaSource implements MangaSource {
             title: chName.isNotEmpty ? chName : null,
             scanlationGroup: pubName.toString(),
             publishedAt: DateTime.tryParse(c['upload_date'] ?? '') ?? DateTime.now(),
-            isPaid: isPaid,
+            isPaid: false, // Открытый доступ к главам
           );
         }).toList();
       }

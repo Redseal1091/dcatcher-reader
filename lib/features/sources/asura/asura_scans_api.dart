@@ -27,6 +27,7 @@ class AsuraScansSource implements MangaSource {
       ratingScore: 9.8,
       totalChapters: 165,
       releaseYear: 2021,
+      sourceId: 'asura',
     ),
     Manga(
       id: 'asura_disaster_hero',
@@ -41,6 +42,7 @@ class AsuraScansSource implements MangaSource {
       ratingScore: 9.7,
       totalChapters: 110,
       releaseYear: 2021,
+      sourceId: 'asura',
     ),
     Manga(
       id: 'asura_iron_sword_hound',
@@ -55,6 +57,7 @@ class AsuraScansSource implements MangaSource {
       ratingScore: 9.9,
       totalChapters: 98,
       releaseYear: 2023,
+      sourceId: 'asura',
     ),
     Manga(
       id: 'asura_reaper_drifting_moon',
@@ -69,6 +72,7 @@ class AsuraScansSource implements MangaSource {
       ratingScore: 9.6,
       totalChapters: 85,
       releaseYear: 2022,
+      sourceId: 'asura',
     ),
     Manga(
       id: 'asura_greatest_estate',
@@ -83,6 +87,7 @@ class AsuraScansSource implements MangaSource {
       ratingScore: 9.9,
       totalChapters: 150,
       releaseYear: 2021,
+      sourceId: 'asura',
     ),
     Manga(
       id: 'asura_mount_hua',
@@ -97,6 +102,7 @@ class AsuraScansSource implements MangaSource {
       ratingScore: 9.9,
       totalChapters: 140,
       releaseYear: 2021,
+      sourceId: 'asura',
     ),
   ];
 

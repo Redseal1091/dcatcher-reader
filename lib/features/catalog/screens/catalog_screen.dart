@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/theme/shadcn_colors.dart';
+import '../../../core/theme/theme_provider.dart';
 import '../../../core/widgets/shadcn_button.dart';
 import '../../../core/widgets/tri_state_chip.dart';
 import '../state/catalog_provider.dart';
@@ -53,16 +54,17 @@ class _CatalogScreenState extends State<CatalogScreen> {
     setState(() => _activeSection = section);
     final catalog = context.read<CatalogProvider>();
     final library = context.read<LibraryProvider>();
+    final settings = context.read<AppSettingsProvider>();
 
     if (section == CatalogSection.manhwa) {
       catalog.filters.publicationTypes = {PublicationType.manhwa};
-      catalog.loadCatalog(libraryProvider: library);
+      catalog.switchSource(SourceManager.getSourceById(settings.manhwaSource), libraryProvider: library);
     } else if (section == CatalogSection.manhua) {
       catalog.filters.publicationTypes = {PublicationType.manhua};
-      catalog.loadCatalog(libraryProvider: library);
+      catalog.switchSource(SourceManager.getSourceById(settings.manhuaSource), libraryProvider: library);
     } else if (section == CatalogSection.manga) {
       catalog.filters.publicationTypes = {PublicationType.manga};
-      catalog.loadCatalog(libraryProvider: library);
+      catalog.switchSource(SourceManager.getSourceById(settings.mangaSource), libraryProvider: library);
     }
   }
 
@@ -365,6 +367,14 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       initialValue: catalog.source,
                       tooltip: 'Сменить источник каталога',
                       onSelected: (newSource) {
+                        final settings = context.read<AppSettingsProvider>();
+                        if (_activeSection == CatalogSection.manhwa) {
+                          settings.setSource('manhwa', newSource.name);
+                        } else if (_activeSection == CatalogSection.manhua) {
+                          settings.setSource('manhua', newSource.name);
+                        } else if (_activeSection == CatalogSection.manga) {
+                          settings.setSource('manga', newSource.name);
+                        }
                         catalog.switchSource(newSource, libraryProvider: library);
                       },
                       itemBuilder: (ctx) => SourceManager.sources

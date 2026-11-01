@@ -24,6 +24,7 @@ class MangaBuffSource implements MangaSource {
       ratingScore: 9.8,
       totalChapters: 450,
       releaseYear: 2015,
+      sourceId: 'mangabuff',
     ),
     Manga(
       id: 'buff_martial_peak',
@@ -38,6 +39,7 @@ class MangaBuffSource implements MangaSource {
       ratingScore: 9.6,
       totalChapters: 3600,
       releaseYear: 2018,
+      sourceId: 'mangabuff',
     ),
     Manga(
       id: 'buff_magic_emperor',
@@ -52,6 +54,7 @@ class MangaBuffSource implements MangaSource {
       ratingScore: 9.9,
       totalChapters: 540,
       releaseYear: 2019,
+      sourceId: 'mangabuff',
     ),
     Manga(
       id: 'buff_spare_me_lord',
@@ -66,6 +69,7 @@ class MangaBuffSource implements MangaSource {
       ratingScore: 9.7,
       totalChapters: 600,
       releaseYear: 2018,
+      sourceId: 'mangabuff',
     ),
   ];
 

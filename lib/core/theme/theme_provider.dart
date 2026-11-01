@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../features/sources/source_manager.dart';
 
 enum AppThemeShade {
   zinc,      // Классический Shadcn Dark Zinc (#09090B)
@@ -35,10 +36,10 @@ class AppSettingsProvider extends ChangeNotifier {
   AppThemeShade _themeShade = AppThemeShade.paprika; // По умолчанию Паприка с отсылкой к DC Mini!
   bool _allowAdultContent = false; // 18+ переключатель
 
-  // Выбранные источники для каталогов
-  String _manhwaSource = 'Remanga';
-  String _manhuaSource = 'Remanga';
-  String _mangaSource = 'Remanga';
+  // Выбранные источники для каталогов (свободный международный доступ без блокировок РФ)
+  String _manhwaSource = 'Asura Scans';
+  String _manhuaSource = 'MangaBuff';
+  String _mangaSource = 'MangaDex';
   String _ranobeSource = 'DCatcher Novels';
   String _booksSource = 'Флибуста (Flibusta)';
 
@@ -150,6 +151,7 @@ class AppSettingsProvider extends ChangeNotifier {
       _mangaSource = prefs.getString('source_manga') ?? _mangaSource;
       _ranobeSource = prefs.getString('source_ranobe') ?? _ranobeSource;
       _booksSource = prefs.getString('source_books') ?? _booksSource;
+      SourceManager.setCurrentSource(_manhwaSource);
       notifyListeners();
     } catch (_) {}
   }
@@ -173,12 +175,15 @@ class AppSettingsProvider extends ChangeNotifier {
     if (catalog == 'manhwa') {
       _manhwaSource = source;
       await prefs.setString('source_manhwa', source);
+      SourceManager.setCurrentSource(source);
     } else if (catalog == 'manhua') {
       _manhuaSource = source;
       await prefs.setString('source_manhua', source);
+      SourceManager.setCurrentSource(source);
     } else if (catalog == 'manga') {
       _mangaSource = source;
       await prefs.setString('source_manga', source);
+      SourceManager.setCurrentSource(source);
     } else if (catalog == 'ranobe') {
       _ranobeSource = source;
       await prefs.setString('source_ranobe', source);

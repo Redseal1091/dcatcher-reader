@@ -26,10 +26,9 @@ class MangaDetailScreen extends StatefulWidget {
 
 class _MangaDetailScreenState extends State<MangaDetailScreen> {
   MangaSource get _source {
-    final id = widget.manga.id;
-    if (id.startsWith('asura_')) return SourceManager.asura;
-    if (id.startsWith('mangalib_')) return SourceManager.mangalib;
-    if (id.startsWith('buff_')) return SourceManager.mangabuff;
+    if (widget.manga.sourceId.isNotEmpty) {
+      return SourceManager.getSourceById(widget.manga.sourceId);
+    }
     return SourceManager.currentSource;
   }
   final ScrollController _scrollController = ScrollController();
@@ -71,16 +70,6 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
   }
 
   void _openReader(Chapter chapter) {
-    if (chapter.isPaid) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Эта глава пока закрыта платным доступом на источнике. Выберите бесплатную главу.'),
-          backgroundColor: ShadcnColors.surface,
-        ),
-      );
-      return;
-    }
-
     final isWebtoon = widget.manga.type == PublicationType.manhwa ||
         widget.manga.type == PublicationType.manhua;
 

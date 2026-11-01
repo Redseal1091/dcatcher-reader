@@ -24,6 +24,7 @@ class MangaLibSource implements MangaSource {
       ratingScore: 9.9,
       totalChapters: 139,
       releaseYear: 2009,
+      sourceId: 'mangalib',
     ),
     Manga(
       id: 'mangalib_demon_slayer',
@@ -38,6 +39,7 @@ class MangaLibSource implements MangaSource {
       ratingScore: 9.7,
       totalChapters: 205,
       releaseYear: 2016,
+      sourceId: 'mangalib',
     ),
     Manga(
       id: 'mangalib_jujutsu_kaisen',
@@ -52,6 +54,7 @@ class MangaLibSource implements MangaSource {
       ratingScore: 9.8,
       totalChapters: 271,
       releaseYear: 2018,
+      sourceId: 'mangalib',
     ),
     Manga(
       id: 'mangalib_one_punch_man',
@@ -66,6 +69,7 @@ class MangaLibSource implements MangaSource {
       ratingScore: 9.8,
       totalChapters: 205,
       releaseYear: 2012,
+      sourceId: 'mangalib',
     ),
     Manga(
       id: 'mangalib_tokyo_ghoul',
@@ -80,6 +84,7 @@ class MangaLibSource implements MangaSource {
       ratingScore: 9.6,
       totalChapters: 143,
       releaseYear: 2011,
+      sourceId: 'mangalib',
     ),
   ];
 

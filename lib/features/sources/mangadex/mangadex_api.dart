@@ -14,6 +14,10 @@ class MangaDexSource implements MangaSource {
   String get id => 'mangadex';
 
   static const String baseUrl = 'https://api.mangadex.org';
+  static const Map<String, String> defaultHeaders = {
+    'User-Agent': 'DCatcher/1.0 (Windows NT 10.0; Win64; x64)',
+    'Accept': 'application/json',
+  };
 
   @override
   Future<List<Manga>> getCatalog({
@@ -25,7 +29,6 @@ class MangaDexSource implements MangaSource {
       final queryParams = <String, dynamic>{
         'limit': '$limit',
         'offset': '$offset',
-        'availableTranslatedLanguage[]': 'ru',
         'includes[]': 'cover_art',
         'order[followedCount]': 'desc',
       };
@@ -34,13 +37,13 @@ class MangaDexSource implements MangaSource {
         queryParams['title'] = filters.searchQuery.trim();
       }
 
-      // 1. Фильтр по типам (Корея - manhwa, Япония - manga, Китай - manhua)
+      // Фильтр по типам (Корея - manhwa, Япония - manga, Китай - manhua)
       final List<String> origLangs = [];
       if (filters.publicationTypes.contains(PublicationType.manhwa)) origLangs.add('ko');
       if (filters.publicationTypes.contains(PublicationType.manga)) origLangs.add('ja');
       if (filters.publicationTypes.contains(PublicationType.manhua)) origLangs.add('zh');
 
-      // 2. Фильтр по возрастному рейтингу
+      // Фильтр по возрастному рейтингу
       final List<String> ratings = [];
       for (final r in filters.contentRatings) {
         ratings.add(r.name);
@@ -63,10 +66,10 @@ class MangaDexSource implements MangaSource {
       }
 
       final url = Uri.parse(uriBuilder.toString());
-      final res = await http.get(url).timeout(const Duration(seconds: 10));
+      final res = await http.get(url, headers: defaultHeaders).timeout(const Duration(seconds: 10));
 
       if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
+        final data = jsonDecode(utf8.decode(res.bodyBytes));
         final List items = data['data'] ?? [];
         return items.map((item) => _parseMangaItem(item)).toList();
       }
@@ -74,7 +77,6 @@ class MangaDexSource implements MangaSource {
       debugPrint('MangaDex API fetch error: $e');
     }
 
-    // Если нет связи с сетью — возвращаем образцовый каталог
     return _getFallbackCatalog(filters);
   }
 
@@ -95,7 +97,7 @@ class MangaDexSource implements MangaSource {
     }
 
     final descs = attrs['description'] as Map<String, dynamic>? ?? {};
-    final description = descs['ru'] ?? descs['en'] ?? 'Описание отсутствует';
+    final description = descs['ru'] ?? descs['en'] ?? 'Описание на MangaDex';
 
     // Тип по исходному языку
     final origLang = attrs['originalLanguage'] as String? ?? 'ja';
@@ -147,37 +149,46 @@ class MangaDexSource implements MangaSource {
       genres: genreList,
       status: attrs['status'] ?? 'ongoing',
       releaseYear: attrs['year'] as int?,
+      isLicensed: false, // На MangaDex нет региональных блокировок РФ!
+      totalChapters: 0,
+      sourceId: 'mangadex',
     );
   }
 
   @override
   Future<List<Chapter>> getChapters(String mangaId) async {
     try {
-      final url = Uri.parse(
+      // 1. Сначала пробуем получить русские главы
+      final ruUrl = Uri.parse(
         '$baseUrl/manga/$mangaId/feed?translatedLanguage[]=ru&order[chapter]=desc&limit=100',
       );
-      final res = await http.get(url).timeout(const Duration(seconds: 10));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
+      final ruRes = await http.get(ruUrl, headers: defaultHeaders).timeout(const Duration(seconds: 8));
+
+      if (ruRes.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(ruRes.bodyBytes));
         final List list = data['data'] ?? [];
-        return list.map((c) {
-          final attrs = c['attributes'];
-          return Chapter(
-            id: c['id'],
-            mangaId: mangaId,
-            chapterNumber: attrs['chapter'] ?? '1',
-            title: attrs['title'],
-            language: 'ru',
-            publishedAt: DateTime.tryParse(attrs['publishAt'] ?? '') ?? DateTime.now(),
-            pagesCount: attrs['pages'] ?? 20,
-          );
-        }).toList();
+        if (list.isNotEmpty) {
+          return list.map((c) => _parseChapter(c, mangaId, 'ru')).toList();
+        }
+      }
+
+      // 2. Если на русском нет — берем все доступные открытые главы (включая en)
+      final allUrl = Uri.parse(
+        '$baseUrl/manga/$mangaId/feed?order[chapter]=desc&limit=100',
+      );
+      final allRes = await http.get(allUrl, headers: defaultHeaders).timeout(const Duration(seconds: 8));
+      if (allRes.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(allRes.bodyBytes));
+        final List list = data['data'] ?? [];
+        if (list.isNotEmpty) {
+          return list.map((c) => _parseChapter(c, mangaId, c['attributes']?['translatedLanguage'] ?? 'en')).toList();
+        }
       }
     } catch (e) {
-      debugPrint('Error fetching chapters: $e');
+      debugPrint('Error fetching MangaDex chapters: $e');
     }
 
-    // Образцовые главы для демонстрации
+    // Fallback образцовые главы
     return List.generate(
       15,
       (i) => Chapter(
@@ -186,7 +197,25 @@ class MangaDexSource implements MangaSource {
         chapterNumber: '${15 - i}',
         title: 'Глава ${15 - i}',
         publishedAt: DateTime.now().subtract(Duration(days: i * 2)),
+        isPaid: false,
       ),
+    );
+  }
+
+  Chapter _parseChapter(Map<String, dynamic> c, String mangaId, String lang) {
+    final attrs = c['attributes'] ?? {};
+    final chNum = attrs['chapter']?.toString() ?? '1';
+    final title = attrs['title']?.toString();
+
+    return Chapter(
+      id: c['id'],
+      mangaId: mangaId,
+      chapterNumber: chNum,
+      title: title != null && title.isNotEmpty ? title : 'Глава $chNum ($lang)',
+      language: lang,
+      publishedAt: DateTime.tryParse(attrs['publishAt'] ?? '') ?? DateTime.now(),
+      pagesCount: attrs['pages'] ?? 20,
+      isPaid: false, // На MangaDex все главы открыты!
     );
   }
 
@@ -194,9 +223,9 @@ class MangaDexSource implements MangaSource {
   Future<List<String>> getChapterPages(String chapterId) async {
     try {
       final url = Uri.parse('$baseUrl/at-home/server/$chapterId');
-      final res = await http.get(url).timeout(const Duration(seconds: 10));
+      final res = await http.get(url, headers: defaultHeaders).timeout(const Duration(seconds: 10));
       if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
+        final data = jsonDecode(utf8.decode(res.bodyBytes));
         final baseUrlHost = data['baseUrl'];
         final chapterData = data['chapter'];
         final hash = chapterData['hash'];
@@ -204,10 +233,9 @@ class MangaDexSource implements MangaSource {
         return pages.map((f) => '$baseUrlHost/data/$hash/$f').toList();
       }
     } catch (e) {
-      debugPrint('Error fetching chapter pages: $e');
+      debugPrint('Error fetching chapter pages from MangaDex: $e');
     }
 
-    // Демо-страницы высокого качества (полотно вебтуна)
     return [
       'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800',
       'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=800',
@@ -224,7 +252,7 @@ class MangaDexSource implements MangaSource {
       const Manga(
         id: 'solo-leveling',
         title: 'Поднятие уровня в одиночку',
-        altTitle: 'Solo Leveling / На' 'едине с богами',
+        altTitle: 'Solo Leveling',
         description: '10 лет назад открылись врата в другие миры, соединив землю с подземельями монстров.',
         coverUrl: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=400',
         type: PublicationType.manhwa,
@@ -232,6 +260,8 @@ class MangaDexSource implements MangaSource {
         genres: ['Экшен', 'Фэнтези', 'Приключения'],
         status: 'completed',
         ratingScore: 9.8,
+        isLicensed: false,
+        sourceId: 'mangadex',
       ),
       const Manga(
         id: 'omniscient-reader',
@@ -244,6 +274,8 @@ class MangaDexSource implements MangaSource {
         genres: ['Экшен', 'Фэнтези', 'Психология'],
         status: 'ongoing',
         ratingScore: 9.7,
+        isLicensed: false,
+        sourceId: 'mangadex',
       ),
       const Manga(
         id: 'berserk',
@@ -256,6 +288,8 @@ class MangaDexSource implements MangaSource {
         genres: ['Экшен', 'Драма', 'Ужасы', 'Фэнтези'],
         status: 'ongoing',
         ratingScore: 9.9,
+        isLicensed: false,
+        sourceId: 'mangadex',
       ),
       const Manga(
         id: 'magic-emperor',
@@ -268,30 +302,8 @@ class MangaDexSource implements MangaSource {
         genres: ['Боевые искусства', 'Фэнтези', 'Экшен'],
         status: 'ongoing',
         ratingScore: 9.4,
-      ),
-      const Manga(
-        id: 'chainsaw-man',
-        title: 'Человек-бензопила',
-        altTitle: 'Chainsaw Man',
-        description: 'Дэндзи живет в крайней нищете, пока не заключает договор с демоном Почитой.',
-        coverUrl: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=400',
-        type: PublicationType.manga,
-        contentRating: ContentRating.erotica,
-        genres: ['Экшен', 'Комедия', 'Сверхъестественное'],
-        status: 'ongoing',
-        ratingScore: 9.2,
-      ),
-      const Manga(
-        id: 'frieren',
-        title: 'Провожающая в последний путь Фрирен',
-        altTitle: 'Sousou no Frieren',
-        description: 'Приключения бессмертной эльфийки-волшебницы после победы над королем демонов.',
-        coverUrl: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=400',
-        type: PublicationType.manga,
-        contentRating: ContentRating.safe,
-        genres: ['Фэнтези', 'Драма', 'Приключения'],
-        status: 'ongoing',
-        ratingScore: 9.6,
+        isLicensed: false,
+        sourceId: 'mangadex',
       ),
     ];
 
