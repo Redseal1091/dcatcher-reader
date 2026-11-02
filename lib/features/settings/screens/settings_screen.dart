@@ -237,7 +237,7 @@ class SettingsScreen extends StatelessWidget {
             catalogName: 'Манхва (Корея)',
             icon: Icons.auto_stories,
             currentSource: settings.manhwaSource,
-            options: const ['Asura Scans', 'MangaDex', 'MangaLib', 'Remanga'],
+            options: const ['MangaBuff', 'MangaDex', 'Asura Scans', 'MangaLib', 'Remanga'],
             onSelect: (s) => settings.setSource('manhwa', s),
           ),
           _buildSourceTile(
@@ -251,7 +251,7 @@ class SettingsScreen extends StatelessWidget {
             catalogName: 'Манга (Япония)',
             icon: Icons.menu_book,
             currentSource: settings.mangaSource,
-            options: const ['MangaDex', 'MangaLib', 'Asura Scans', 'Remanga'],
+            options: const ['MangaBuff', 'MangaDex', 'MangaLib', 'Asura Scans', 'Remanga'],
             onSelect: (s) => settings.setSource('manga', s),
           ),
           _buildSourceTile(
@@ -265,7 +265,7 @@ class SettingsScreen extends StatelessWidget {
             catalogName: 'Книги (Художественные)',
             icon: Icons.book,
             currentSource: settings.booksSource,
-            options: const ['Флибуста (Flibusta)', 'Открытая библиотека классики', 'Мои файлы (.txt/.fb2)'],
+            options: const ['Флибуста (Flibusta.site)', 'Открытая библиотека классики', 'Мои файлы (.txt/.fb2)'],
             onSelect: (s) => settings.setSource('books', s),
           ),
         ],

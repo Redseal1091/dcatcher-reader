@@ -24,7 +24,7 @@ class PagedReaderScreen extends StatefulWidget {
 }
 
 class _PagedReaderScreenState extends State<PagedReaderScreen> {
-  final MangaSource _source = SourceManager.currentSource;
+  late final MangaSource _source;
   List<String> _pageUrls = [];
   bool _isLoading = true;
   bool _showControls = true;
@@ -32,15 +32,33 @@ class _PagedReaderScreenState extends State<PagedReaderScreen> {
   final PageController _pageController = PageController();
   final Set<int> _preloadedIndices = {};
 
-  static const Map<String, String> _imageHeaders = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Referer': 'https://remanga.org/',
-    'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-  };
+  static Map<String, String> _getImageHeaders(String url) {
+    if (url.contains('mangabuff.ru')) {
+      return const {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': 'https://mangabuff.ru/',
+        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+      };
+    }
+    if (url.contains('remanga.org')) {
+      return const {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': 'https://remanga.org/',
+        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+      };
+    }
+    return const {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+    };
+  }
 
   @override
   void initState() {
     super.initState();
+    _source = SourceManager.getSourceById(
+      widget.manga.sourceId.isNotEmpty ? widget.manga.sourceId : 'mangadex',
+    );
     _loadPages();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final library = context.read<LibraryProvider>();
@@ -63,7 +81,7 @@ class _PagedReaderScreenState extends State<PagedReaderScreen> {
         final url = _pageUrls[target];
         if (url.startsWith('http')) {
           precacheImage(
-            CachedNetworkImageProvider(url, headers: _imageHeaders),
+            CachedNetworkImageProvider(url, headers: _getImageHeaders(url)),
             context,
           ).catchError((_) {});
         }
@@ -119,7 +137,7 @@ class _PagedReaderScreenState extends State<PagedReaderScreen> {
                     child: Center(
                       child: CachedNetworkImage(
                         imageUrl: _pageUrls[index],
-                        httpHeaders: _imageHeaders,
+                        httpHeaders: _getImageHeaders(_pageUrls[index]),
                         fit: BoxFit.contain,
                         memCacheWidth: 1080,
                         placeholder: (context, url) => Center(

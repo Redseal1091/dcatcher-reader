@@ -41,7 +41,7 @@ class AppSettingsProvider extends ChangeNotifier {
   String _manhuaSource = 'MangaBuff';
   String _mangaSource = 'MangaDex';
   String _ranobeSource = 'DCatcher Novels';
-  String _booksSource = 'Флибуста (Flibusta)';
+  String _booksSource = 'Флибуста (Flibusta.site)';
 
   AppThemeShade get themeShade => _themeShade;
   bool get allowAdultContent => _allowAdultContent;

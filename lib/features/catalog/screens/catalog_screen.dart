@@ -35,6 +35,16 @@ class _CatalogScreenState extends State<CatalogScreen> {
   final TextEditingController _searchCtrl = TextEditingController();
   CatalogSection _activeSection = CatalogSection.manhwa;
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _switchSection(_activeSection);
+      }
+    });
+  }
+
   String get _currentSectionLabel {
     switch (_activeSection) {
       case CatalogSection.manhwa:

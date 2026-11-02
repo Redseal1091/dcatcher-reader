@@ -237,10 +237,12 @@ class MangaDexSource implements MangaSource {
     }
 
     return [
-      'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800',
-      'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=800',
-      'https://images.unsplash.com/photo-1534447677768-be436bb09401?w=800',
-      'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=800',
+      'https://c3.mangabuff.ru/img2/chapters/jeonjijeog-dogja-sijeom_/1/1/1.jpg',
+      'https://c3.mangabuff.ru/img2/chapters/jeonjijeog-dogja-sijeom_/1/1/2.jpg',
+      'https://c3.mangabuff.ru/img2/chapters/jeonjijeog-dogja-sijeom_/1/1/3.jpg',
+      'https://c3.mangabuff.ru/img2/chapters/jeonjijeog-dogja-sijeom_/1/1/4.jpg',
+      'https://c3.mangabuff.ru/img2/chapters/jeonjijeog-dogja-sijeom_/1/1/5.jpg',
+      'https://c3.mangabuff.ru/img2/chapters/jeonjijeog-dogja-sijeom_/1/1/6.jpg',
     ];
   }
 

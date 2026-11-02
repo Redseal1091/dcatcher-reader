@@ -28,7 +28,7 @@ class WebtoonReaderScreen extends StatefulWidget {
 }
 
 class _WebtoonReaderScreenState extends State<WebtoonReaderScreen> {
-  final MangaSource _source = SourceManager.currentSource;
+  late final MangaSource _source;
   List<String> _pageUrls = [];
   bool _isLoading = true;
   bool _showControls = true;
@@ -40,15 +40,33 @@ class _WebtoonReaderScreenState extends State<WebtoonReaderScreen> {
   Timer? _autoScrollTimer;
   double _autoScrollSpeed = 0.0; // 0 = выключен, 1.0, 1.5, 2.0
 
-  static const Map<String, String> _imageHeaders = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Referer': 'https://remanga.org/',
-    'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-  };
+  static Map<String, String> _getImageHeaders(String url) {
+    if (url.contains('mangabuff.ru')) {
+      return const {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': 'https://mangabuff.ru/',
+        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+      };
+    }
+    if (url.contains('remanga.org')) {
+      return const {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': 'https://remanga.org/',
+        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+      };
+    }
+    return const {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+    };
+  }
 
   @override
   void initState() {
     super.initState();
+    _source = SourceManager.getSourceById(
+      widget.manga.sourceId.isNotEmpty ? widget.manga.sourceId : 'mangadex',
+    );
     _loadPages();
     _scrollController.addListener(_onScroll);
 
@@ -86,7 +104,7 @@ class _WebtoonReaderScreenState extends State<WebtoonReaderScreen> {
       if (!url.startsWith('http')) continue;
 
       precacheImage(
-        CachedNetworkImageProvider(url, headers: _imageHeaders),
+        CachedNetworkImageProvider(url, headers: _getImageHeaders(url)),
         context,
       ).catchError((_) {});
     }
@@ -231,7 +249,7 @@ class _WebtoonReaderScreenState extends State<WebtoonReaderScreen> {
                     path: path,
                     index: index,
                     isOffline: _isOffline,
-                    headers: _imageHeaders,
+                    headers: _getImageHeaders(path),
                     onTap: () {
                       if (_autoScrollSpeed > 0) {
                         _stopAutoScroll();

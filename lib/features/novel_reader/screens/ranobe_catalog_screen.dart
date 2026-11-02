@@ -114,7 +114,11 @@ class _RanobeCatalogScreenState extends State<RanobeCatalogScreen> {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => NovelReaderScreen(novelTitle: book.title, chapter: ch),
+                                builder: (_) => NovelReaderScreen(
+                                  novelTitle: book.title,
+                                  chapter: ch,
+                                  allChapters: book.chapters,
+                                ),
                               ),
                             );
                           },

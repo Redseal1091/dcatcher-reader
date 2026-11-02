@@ -15,7 +15,7 @@ class BooksCatalogScreen extends StatefulWidget {
 class _BooksCatalogScreenState extends State<BooksCatalogScreen> {
   final BooksRepository _repo = BooksRepository();
   final TextEditingController _searchCtrl = TextEditingController();
-  String _selectedSource = 'Флибуста (Flibusta)';
+  String _selectedSource = 'Флибуста (Flibusta.site)';
   String _selectedGenre = 'Все';
   List<BookItem> _books = [];
   bool _isLoading = true;
@@ -41,7 +41,7 @@ class _BooksCatalogScreenState extends State<BooksCatalogScreen> {
     }
   }
 
-  void _openReader(BookItem book, BookChapter chapter) {
+  void _openReader(BookItem book, BookChapter chapter, [List<BookChapter>? allList]) {
     final novelChapter = NovelChapter(
       id: chapter.id,
       title: chapter.title,
@@ -50,12 +50,22 @@ class _BooksCatalogScreenState extends State<BooksCatalogScreen> {
       publishedAt: DateTime(book.year),
     );
 
+    final sourceList = allList ?? book.chapters;
+    final allNovelChapters = sourceList.map((c) => NovelChapter(
+      id: c.id,
+      title: c.title,
+      chapterNumber: c.number,
+      content: c.content,
+      publishedAt: DateTime(book.year),
+    )).toList();
+
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => NovelReaderScreen(
           novelTitle: '${book.author} — ${book.title}',
           chapter: novelChapter,
+          allChapters: allNovelChapters,
         ),
       ),
     );
@@ -174,33 +184,77 @@ class _BooksCatalogScreenState extends State<BooksCatalogScreen> {
                   ),
 
                   const SizedBox(height: 20),
-                  Text('Оглавление (${book.chapters.length} глав)', style: const TextStyle(color: ShadcnColors.foreground, fontSize: 14, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 10),
-
-                  ...book.chapters.map((ch) {
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      decoration: BoxDecoration(
-                        color: ShadcnColors.card,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: ShadcnColors.border),
-                      ),
-                      child: ListTile(
-                        leading: const Icon(Icons.menu_book, color: ShadcnColors.foreground, size: 20),
-                        title: Text(ch.title, style: const TextStyle(color: ShadcnColors.foreground, fontSize: 13, fontWeight: FontWeight.w600)),
-                        trailing: const Icon(Icons.arrow_forward_ios_rounded, color: ShadcnColors.mutedForeground, size: 14),
-                        onTap: () {
-                          Navigator.pop(ctx);
-                          _openReader(book, ch);
-                        },
-                      ),
-                    );
-                  }),
+                  if (book.chapters.isNotEmpty) ...[
+                    Text('Оглавление (${book.chapters.length} глав)', style: const TextStyle(color: ShadcnColors.foreground, fontSize: 14, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 10),
+                    ...book.chapters.map((ch) => _buildChapterTile(ctx, book, ch, book.chapters)),
+                  ] else ...[
+                    FutureBuilder<List<BookChapter>>(
+                      future: _repo.getBookChapters(book),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 24),
+                            child: Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  CircularProgressIndicator(strokeWidth: 2, color: ShadcnColors.primary),
+                                  SizedBox(height: 12),
+                                  Text('Загрузка глав с Flibusta.site...', style: TextStyle(color: ShadcnColors.mutedForeground, fontSize: 13)),
+                                ],
+                              ),
+                            ),
+                          );
+                        }
+                        final chapters = snapshot.data ?? [];
+                        if (chapters.isEmpty) {
+                          return const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 16),
+                            child: Text('Текст книги временно недоступен', style: TextStyle(color: ShadcnColors.mutedForeground)),
+                          );
+                        }
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Оглавление (${chapters.length} глав)', style: const TextStyle(color: ShadcnColors.foreground, fontSize: 14, fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 10),
+                            ...chapters.map((ch) => _buildChapterTile(ctx, book, ch, chapters)),
+                          ],
+                        );
+                      },
+                    ),
+                  ],
                 ],
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildChapterTile(BuildContext ctx, BookItem book, BookChapter ch, List<BookChapter> allChapters) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: ShadcnColors.card,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: ShadcnColors.border),
+      ),
+      child: ListTile(
+        leading: const Icon(Icons.menu_book, color: ShadcnColors.foreground, size: 20),
+        title: Text(
+          ch.title,
+          style: const TextStyle(color: ShadcnColors.foreground, fontSize: 13, fontWeight: FontWeight.w600),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: const Icon(Icons.arrow_forward_ios_rounded, color: ShadcnColors.mutedForeground, size: 14),
+        onTap: () {
+          Navigator.pop(ctx);
+          _openReader(book, ch, allChapters);
+        },
       ),
     );
   }
