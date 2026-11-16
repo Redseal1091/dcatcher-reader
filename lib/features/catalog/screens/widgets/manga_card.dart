@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import '../../../../core/widgets/dcatcher_image.dart';
 import '../../../../core/theme/shadcn_colors.dart';
 import '../../../../core/widgets/shadcn_badge.dart';
 import '../../models/manga.dart';
@@ -68,14 +68,15 @@ class _MangaCardState extends State<MangaCard> {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      CachedNetworkImage(
+                      DcatcherImage(
+                        sourceId: manga.sourceId,
                         imageUrl: manga.coverUrl,
-                        httpHeaders: const {
+                        headers: const {
                           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                          'Referer': 'https://remanga.org/',
+                          'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
                         },
                         fit: BoxFit.cover,
-                        fadeInDuration: const Duration(milliseconds: 200),
+
                         placeholder: (context, url) => Container(
                           color: ShadcnColors.surface,
                           child: const Center(

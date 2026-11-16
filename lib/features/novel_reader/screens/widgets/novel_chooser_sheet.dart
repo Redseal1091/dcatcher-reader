@@ -59,6 +59,8 @@ class _NovelChooserSheetState extends State<NovelChooserSheet> {
         builder: (_) => NovelReaderScreen(
           novelTitle: book.title,
           chapter: chapter,
+          allChapters: book.chapters,
+          source: book.source,
         ),
       ),
     );

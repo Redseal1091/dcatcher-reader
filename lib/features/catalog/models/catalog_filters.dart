@@ -17,6 +17,15 @@ class CatalogFilters {
   // Жанры
   Set<String> selectedGenreIds;
 
+  // Compatibility getters/setters for query and genres
+  String get query => searchQuery;
+  set query(String val) => searchQuery = val;
+
+  Set<String> get includedGenres => selectedGenreIds;
+  set includedGenres(Set<String> val) => selectedGenreIds = val;
+
+  Set<String> excludedGenres = {};
+
   // Поисковая строка
   String searchQuery;
 
@@ -45,7 +54,7 @@ class CatalogFilters {
         selectedGenreIds = selectedGenreIds ?? {};
 
   CatalogFilters clone() {
-    return CatalogFilters(
+    final cloned = CatalogFilters(
       readingStatus: readingStatus,
       completedStatus: completedStatus,
       plannedStatus: plannedStatus,
@@ -57,6 +66,8 @@ class CatalogFilters {
       ordering: ordering,
       statusFilter: statusFilter,
     );
+    cloned.excludedGenres = Set.from(excludedGenres);
+    return cloned;
   }
 
   void reset() {
@@ -66,10 +77,39 @@ class CatalogFilters {
     publicationTypes = {PublicationType.manhwa, PublicationType.manga, PublicationType.manhua};
     contentRatings = {ContentRating.safe, ContentRating.suggestive};
     selectedGenreIds = {};
+    excludedGenres = {};
     searchQuery = '';
     hideLicensed = false;
     ordering = '-rating';
     statusFilter = null;
+  }
+
+  FilterTriState getGenreState(String genreId) {
+    if (selectedGenreIds.contains(genreId)) return FilterTriState.include;
+    if (excludedGenres.contains(genreId)) return FilterTriState.exclude;
+    return FilterTriState.ignore;
+  }
+
+  void setGenreState(String genreId, FilterTriState state) {
+    switch (state) {
+      case FilterTriState.ignore:
+        selectedGenreIds.remove(genreId);
+        excludedGenres.remove(genreId);
+        break;
+      case FilterTriState.include:
+        selectedGenreIds.add(genreId);
+        excludedGenres.remove(genreId);
+        break;
+      case FilterTriState.exclude:
+        selectedGenreIds.remove(genreId);
+        excludedGenres.add(genreId);
+        break;
+    }
+  }
+
+  void clearGenres() {
+    selectedGenreIds.clear();
+    excludedGenres.clear();
   }
 
   int get activeFiltersCount {
@@ -80,6 +120,7 @@ class CatalogFilters {
     if (publicationTypes.length < 3) count++;
     if (contentRatings.contains(ContentRating.erotica) || contentRatings.length < 2) count++;
     if (selectedGenreIds.isNotEmpty) count += selectedGenreIds.length;
+    if (excludedGenres.isNotEmpty) count += excludedGenres.length;
     if (hideLicensed) count++;
     return count;
   }

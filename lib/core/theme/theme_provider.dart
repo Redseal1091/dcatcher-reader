@@ -37,10 +37,10 @@ class AppSettingsProvider extends ChangeNotifier {
   bool _allowAdultContent = false; // 18+ переключатель
 
   // Выбранные источники для каталогов (свободный международный доступ без блокировок РФ)
-  String _manhwaSource = 'Asura Scans';
-  String _manhuaSource = 'MangaBuff';
-  String _mangaSource = 'MangaDex';
-  String _ranobeSource = 'DCatcher Novels';
+  String _manhwaSource = '';
+  String _manhuaSource = '';
+  String _mangaSource = '';
+  String _ranobeSource = 'RanobeHub';
   String _booksSource = 'Флибуста (Flibusta.site)';
 
   AppThemeShade get themeShade => _themeShade;
@@ -151,7 +151,9 @@ class AppSettingsProvider extends ChangeNotifier {
       _mangaSource = prefs.getString('source_manga') ?? _mangaSource;
       _ranobeSource = prefs.getString('source_ranobe') ?? _ranobeSource;
       _booksSource = prefs.getString('source_books') ?? _booksSource;
-      SourceManager.setCurrentSource(_manhwaSource);
+      if (_manhwaSource.isNotEmpty) {
+        SourceManager.setCurrentSource(_manhwaSource);
+      }
       notifyListeners();
     } catch (_) {}
   }

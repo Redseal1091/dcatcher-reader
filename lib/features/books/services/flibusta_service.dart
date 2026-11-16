@@ -1,10 +1,22 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:html/parser.dart' as html_parser;
 import '../models/book_item.dart';
+import 'flibusta_opds_parser.dart';
+import '../models/book_catalog_page.dart';
+import 'epub_book_parser.dart';
+import 'fb2_book_parser.dart';
 
 class FlibustaService {
   static const String baseUrl = 'https://flibusta.site';
+
+  final http.Client Function()? _clientFactory;
+
+  FlibustaService({http.Client Function()? clientFactory})
+      : _clientFactory = clientFactory;
+
+  http.Client _createClient() => _clientFactory != null ? _clientFactory!() : http.Client();
 
   static const Map<String, String> _headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -400,141 +412,269 @@ class FlibustaService {
     ),
   ];
 
-  /// Поиск и получение книг с Flibusta.site через официальный OPDS каталог
-  Future<List<BookItem>> searchFlibusta(String query) async {
-    final q = query.trim();
+  /// Поиск и получение страницы каталога книг с Flibusta.site через официальный OPDS каталог
+  Future<BookCatalogPage> searchFlibustaPage(String query, {Uri? pageUri}) async {
+    final Uri targetUri;
 
-    try {
-      Uri uri;
+    if (pageUri != null) {
+      // Validate unsafe origin before HTTP
+      if (!pageUri.isScheme('https') ||
+          pageUri.userInfo.isNotEmpty ||
+          (pageUri.hasPort && pageUri.port != 443) ||
+          pageUri.host != 'flibusta.site' ||
+          pageUri.hasFragment ||
+          (pageUri.path != '/opds' && !pageUri.path.startsWith('/opds/'))) {
+        throw const FormatException('Invalid catalog response');
+      }
+      targetUri = pageUri;
+    } else {
+      final q = query.trim();
       if (q.isEmpty) {
         // Запрос свежих новинок с Flibusta.site
-        uri = Uri.parse('$baseUrl/opds/new/0/new');
+        targetUri = Uri.parse('$baseUrl/opds/new/0/new');
       } else {
         // Прямой поиск книг по автору или названию
-        uri = Uri.parse('$baseUrl/opds/search?searchType=books&searchTerm=${Uri.encodeComponent(q)}');
+        targetUri = Uri.parse('$baseUrl/opds/search?searchType=books&searchTerm=${Uri.encodeComponent(q)}');
       }
-
-      final res = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 7));
-      if (res.statusCode == 200 && res.body.contains('<entry>')) {
-        final parsed = _parseOpdsFeed(res.body);
-        if (parsed.isNotEmpty) {
-          debugPrint('Flibusta.site: successfully loaded ${parsed.length} books from OPDS');
-          return parsed;
-        }
-      }
-    } catch (e) {
-      debugPrint('Flibusta.site OPDS connection note: $e');
     }
 
-    // Если сеть недоступна, возвращаем богатый фонд классики Flibusta
-    if (q.isEmpty) return curatedFlibustaBooks;
-
-    final lower = q.toLowerCase();
-    final fallback = curatedFlibustaBooks.where((b) {
-      final inTitle = b.title.toLowerCase().contains(lower);
-      final inAuthor = b.author.toLowerCase().contains(lower);
-      final inDesc = b.description.toLowerCase().contains(lower);
-      return inTitle || inAuthor || inDesc;
-    }).toList();
-
-    return fallback.isNotEmpty ? fallback : curatedFlibustaBooks;
-  }
-
-  /// Парсинг Atom XML фида Flibusta OPDS в структурированные BookItem
-  List<BookItem> _parseOpdsFeed(String xml) {
-    final List<BookItem> list = [];
-    final entryRegex = RegExp(r'<entry>([\s\S]*?)<\/entry>', caseSensitive: false);
-    final titleRegex = RegExp(r'<title[^>]*>([\s\S]*?)<\/title>', caseSensitive: false);
-    final authorRegex = RegExp(r'<author>[\s\S]*?<name>([\s\S]*?)<\/name>', caseSensitive: false);
-    final contentRegex = RegExp(r'<content[^>]*>([\s\S]*?)<\/content>', caseSensitive: false);
-    final bookIdRegex = RegExp(r'/b/(\d+)', caseSensitive: false);
-    final coverRegex = RegExp(r'href="([^"]+)"[^>]*rel="http://opds-spec.org/image"', caseSensitive: false);
-    final categoryRegex = RegExp(r'<category term="([^"]+)"', caseSensitive: false);
-
-    for (final match in entryRegex.allMatches(xml)) {
-      final entryText = match.group(1);
-      if (entryText == null) continue;
-
-      final titleMatch = titleRegex.firstMatch(entryText);
-      final authorMatch = authorRegex.firstMatch(entryText);
-      final contentMatch = contentRegex.firstMatch(entryText);
-      final idMatch = bookIdRegex.firstMatch(entryText);
-      final coverMatch = coverRegex.firstMatch(entryText);
-      final catMatch = categoryRegex.firstMatch(entryText);
-
-      final rawTitle = titleMatch?.group(1) ?? 'Без названия';
-      final cleanTitle = _unescapeHtml(rawTitle);
-
-      final author = authorMatch != null ? _unescapeHtml(authorMatch.group(1)!) : 'Неизвестный автор';
-      final bookId = idMatch?.group(1) ?? '${DateTime.now().millisecondsSinceEpoch}_${list.length}';
-      
-      String coverUrl = 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400&q=80';
-      if (coverMatch != null) {
-        final relPath = coverMatch.group(1)!;
-        coverUrl = relPath.startsWith('http') ? relPath : '$baseUrl$relPath';
-      }
-
-      String desc = 'Книга из каталога Flibusta.site';
-      if (contentMatch != null) {
-        desc = _cleanHtmlToText(contentMatch.group(1)!);
-        if (desc.isEmpty) desc = 'Аннотация доступна на Flibusta.site';
-      }
-
-      final genre = catMatch?.group(1) ?? 'Художественная литература';
-
-      list.add(BookItem(
-        id: bookId,
-        title: cleanTitle,
-        author: author,
-        genre: genre,
-        coverUrl: coverUrl,
-        description: desc,
-        year: DateTime.now().year,
-        rating: 9.3,
-        chapters: const [], // Главы подгружаются при открытии
-      ));
-    }
-
-    return list;
-  }
-
-  /// Онлайн чтение текста книги с Flibusta.site с разбивкой по главам
-  Future<List<BookChapter>> fetchBookChapters(String bookId) async {
     try {
-      final uri = Uri.parse('$baseUrl/b/$bookId/read');
-      final res = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 10));
+      final client = _createClient();
+      final http.Response res;
+      try {
+        final request = http.Request('GET', targetUri)
+          ..headers.addAll(_headers)
+          ..followRedirects = false;
+        res = await () async {
+          final streamedResponse = await client.send(request);
+          return await http.Response.fromStream(streamedResponse);
+        }().timeout(const Duration(seconds: 15));
+      } finally {
+        client.close();
+      }
+      if (res.statusCode != 200) {
+        throw FormatException("Flibusta HTTP status ${res.statusCode}");
+      }
 
-      if (res.statusCode == 200 && res.body.isNotEmpty) {
-        final html = utf8.decode(res.bodyBytes, allowMalformed: true);
-        final chapters = _extractChaptersFromHtml(html, bookId);
-        if (chapters.isNotEmpty) {
-          return chapters;
+      final decoded = utf8.decode(res.bodyBytes, allowMalformed: true);
+      final page = parseFlibustaOpdsPage(decoded, documentUri: targetUri);
+      debugPrint('Flibusta.site: successfully loaded ${page.items.length} books from OPDS page');
+      return page;
+    } catch (e) {
+      if (e is FormatException) rethrow;
+      throw Exception('Flibusta connection unavailable');
+    }
+  }
+
+  /// Поиск и получение книг с Flibusta.site через официальный OPDS каталог
+  Future<List<BookItem>> searchFlibusta(String query) async {
+    final page = await searchFlibustaPage(query);
+    return page.items;
+  }
+
+  /// Онлайн чтение текста книги с Flibusta.site с разбивкой по главам.
+  /// При недоступности прямого HTML ридера автоматически пробует форматы FB2 и EPUB,
+  /// если они указаны в метаданных доступных форматов издания.
+  Future<List<BookChapter>> fetchBookChapters(
+    String bookId, {
+    List<String> availableFormats = const [],
+  }) async {
+    if (!RegExp(r'^\d+$').hasMatch(bookId)) {
+      throw const FormatException('Invalid book ID');
+    }
+
+    final hasEpub = availableFormats.any((fmt) => fmt.toLowerCase().contains('epub'));
+    final hasFb2 = availableFormats.any((fmt) =>
+        fmt.toLowerCase().contains('fb2') ||
+        fmt.toLowerCase().contains('fictionbook') ||
+        fmt.toLowerCase().contains('zip'));
+
+    final htmlTimeout = (hasFb2 || hasEpub) ? const Duration(seconds: 10) : const Duration(seconds: 25);
+    try {
+      return await _fetchHtmlChapters(bookId, timeout: htmlTimeout);
+    } catch (e) {
+      // Fallback: если указан явно EPUB и нет FB2, пробуем EPUB первым
+      if (hasEpub && !hasFb2) {
+        try {
+          return await _fetchEpubChapters(bookId);
+        } catch (_) {}
+      }
+
+      // Fallback: пробуем FB2 (наиболее надежный и легкий формат Flibusta)
+      if (hasFb2) {
+        try {
+          return await _fetchFb2Chapters(bookId);
+        } catch (_) {}
+      }
+
+      // Fallback: пробуем EPUB (если еще не пробовали)
+      if (hasEpub) {
+        try {
+          return await _fetchEpubChapters(bookId);
+        } catch (_) {}
+      }
+
+      if (e is FormatException) rethrow;
+      throw Exception('Flibusta content connection unavailable');
+    }
+  }
+
+  /// Безопасное выполнение GET-запроса с поддержкой перенаправлений внутри домена flibusta.site и его поддоменов (например, static.flibusta.site)
+  Future<http.Response> _getWithSameOriginRedirects(
+    Uri initialUri, {
+    required Duration timeout,
+    Map<String, String>? headers,
+    int maxRedirects = 5,
+  }) async {
+    Uri currentUri = initialUri;
+    for (int i = 0; i <= maxRedirects; i++) {
+      final client = _createClient();
+      final http.Response res;
+      try {
+        final request = http.Request('GET', currentUri)
+          ..headers.addAll(headers ?? _headers)
+          ..followRedirects = false;
+        res = await () async {
+          final streamed = await client.send(request);
+          return await http.Response.fromStream(streamed);
+        }().timeout(timeout);
+      } finally {
+        client.close();
+      }
+
+      if (res.statusCode == 301 ||
+          res.statusCode == 302 ||
+          res.statusCode == 303 ||
+          res.statusCode == 307 ||
+          res.statusCode == 308) {
+        final locationHeader = res.headers['location'];
+        if (locationHeader == null || locationHeader.trim().isEmpty) {
+          return res;
+        }
+        final nextUri = currentUri.resolve(locationHeader.trim());
+        final isFlibustaHost = nextUri.host == 'flibusta.site' || nextUri.host.endsWith('.flibusta.site');
+        if (nextUri.isScheme('https') && isFlibustaHost) {
+          currentUri = nextUri;
+          continue;
+        } else {
+          return res;
         }
       }
-    } catch (e) {
-      debugPrint('Error fetching book content from Flibusta.site: $e');
+
+      return res;
+    }
+    return http.Response('Too many redirects', 310);
+  }
+
+  Future<List<BookChapter>> _fetchHtmlChapters(
+    String bookId, {
+    Duration timeout = const Duration(seconds: 25),
+  }) async {
+    final uri = Uri.parse('$baseUrl/b/$bookId/read');
+    final res = await _getWithSameOriginRedirects(
+      uri,
+      timeout: timeout,
+    );
+
+    if (res.statusCode != 200) {
+      throw FormatException("Flibusta content HTTP status ${res.statusCode}");
     }
 
-    // Если это одна из встроенных книг — возвращаем ее главы
-    for (final b in curatedFlibustaBooks) {
-      if (b.id == bookId) return b.chapters;
+    final contentType = res.headers['content-type'];
+    if (contentType != null) {
+      final mediaType = contentType.split(';').first.trim().toLowerCase();
+      if (mediaType != 'text/html' && mediaType != 'application/xhtml+xml') {
+        throw const FormatException('Invalid content type for readable chapters');
+      }
     }
 
-    return [
-      BookChapter(
-        id: '${bookId}_ch1',
-        number: '1',
-        title: 'Текст книги (Flibusta.site)',
-        content: 'Загрузка полного текста с Flibusta.site в процессе...',
-      ),
-    ];
+    if (res.body.isNotEmpty) {
+      final html = utf8.decode(res.bodyBytes, allowMalformed: true);
+      final chapters = _extractChaptersFromHtml(html, bookId);
+      if (chapters.isNotEmpty) {
+        return chapters;
+      }
+    }
+    throw const FormatException('Flibusta content has no readable chapters');
+  }
+
+  Future<List<BookChapter>> _fetchEpubChapters(String bookId) async {
+    final uri = Uri.parse('$baseUrl/b/$bookId/epub');
+    final res = await _getWithSameOriginRedirects(
+      uri,
+      timeout: const Duration(seconds: 25),
+    );
+
+    if (res.statusCode != 200 || res.bodyBytes.isEmpty) {
+      throw FormatException('Flibusta EPUB HTTP status ${res.statusCode}');
+    }
+
+    final parsed = EpubBookParser().parseBytes(res.bodyBytes);
+    if (parsed.chapters.isNotEmpty) {
+      return parsed.chapters;
+    }
+    throw FormatException('Flibusta EPUB has no readable chapters for book $bookId');
+  }
+
+  Future<List<BookChapter>> _fetchFb2Chapters(String bookId) async {
+    for (final path in ['/b/$bookId/fb2', '/b/$bookId/download']) {
+      try {
+        final uri = Uri.parse('$baseUrl$path');
+        final res = await _getWithSameOriginRedirects(
+          uri,
+          timeout: const Duration(seconds: 25),
+        );
+        if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
+          final parsed = Fb2BookParser().parseBytes(res.bodyBytes);
+          if (parsed.chapters.isNotEmpty) {
+            return parsed.chapters;
+          }
+        }
+      } catch (e) {
+        debugPrint('Flibusta FB2 attempt for $path failed: $e');
+      }
+    }
+    throw FormatException('Flibusta FB2 unavailable for book $bookId');
   }
 
   /// Извлечение и разделение глав книги из HTML представления Flibusta
   List<BookChapter> _extractChaptersFromHtml(String html, String bookId) {
-    String content = html;
-    final bodyMatch = RegExp(r'<body[^>]*>([\s\S]*?)<\/body>', caseSensitive: false).firstMatch(html);
-    if (bodyMatch != null) content = bodyMatch.group(1)!;
+    final document = html_parser.parse(html);
+    final bookReadEl = document.querySelector('.book-read');
+    String content;
+    if (bookReadEl != null) {
+      for (final el in bookReadEl.querySelectorAll('.poem h1, .poem h2, .poem h3, .poem h4, .stanza h1, .stanza h2, .stanza h3, .stanza h4')) {
+        final p = html_parser.parseFragment('<p>${el.innerHtml}</p>').firstChild;
+        if (p != null) {
+          el.replaceWith(p);
+        }
+      }
+      content = bookReadEl.innerHtml;
+    } else {
+      // When .book-read is absent (common on Flibusta Drupal pages),
+      // check #main after stripping site navigation, blocks and sidebars.
+      final mainEl = document.querySelector('#main');
+      if (mainEl != null) {
+        mainEl.querySelectorAll('header, footer, nav, aside, .breadcrumb, #content-top, .tabs, .block, .help, .feed-icon, form, script, style, #sidebar-left, #sidebar-right, #header, #footer, h1.title').forEach((el) => el.remove());
+        final mainText = mainEl.text.trim();
+        final hasParagraphs = mainEl.querySelectorAll('p, .book').isNotEmpty;
+        if (mainText.length > 150 && hasParagraphs) {
+          content = mainEl.innerHtml;
+        } else {
+          return const [];
+        }
+      } else {
+        final isSiteChrome = document.querySelector('#header') != null ||
+            document.querySelector('#site-name') != null ||
+            document.querySelector('aside') != null;
+        if (isSiteChrome) {
+          return const [];
+        }
+        content = document.body?.innerHtml ?? html;
+      }
+    }
+
+
 
     // Очищаем скрипты и стили
     content = content
@@ -584,11 +724,19 @@ class FlibustaService {
 
           // Отфильтровываем технические шапки сайта
           final lower = heading.toLowerCase();
-          if (lower.contains('флибуста') || lower.contains('поиск книг') || lower.contains('книжное братство')) {
+          if (bookReadEl == null && (lower.contains('флибуста') || lower.contains('поиск книг') || lower.contains('книжное братство'))) {
             continue;
           }
 
-          if (bodyText.length > 50) {
+          if (bookReadEl == null && (lower.contains('(fb2)') || lower.contains('(epub)')) && bodyText.length < 200) {
+            continue;
+          }
+
+          if (lower == 'оглавление' && bodyText.contains('Глава 1')) {
+            continue;
+          }
+
+          if (bodyText.isNotEmpty && (bookReadEl != null || bodyText.length > 50)) {
             chapters.add(BookChapter(
               id: '${bookId}_ch_$index',
               number: '$index',
@@ -602,7 +750,7 @@ class FlibustaService {
     }
 
     // Если заголовков нет, делим объемный текст на удобные логические главы по ~6000 символов
-    if (chapters.isEmpty && content.length > 200) {
+    if (chapters.isEmpty && (content.length > 200 || (bookReadEl != null && content.trim().isNotEmpty))) {
       final paragraphs = content.split('\n\n');
       StringBuffer currentBuffer = StringBuffer();
       int partNumber = 1;

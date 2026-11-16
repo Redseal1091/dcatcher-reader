@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import '../../../core/widgets/dcatcher_image.dart';
 import '../../../core/theme/shadcn_colors.dart';
 import '../../../core/widgets/shadcn_badge.dart';
 import '../models/manga.dart';
@@ -9,23 +9,43 @@ import '../../library/models/library_item.dart';
 import '../../reader/models/chapter.dart';
 import '../../reader/screens/webtoon_reader_screen.dart';
 import '../../reader/screens/paged_reader_screen.dart';
+import '../../reader/services/chapter_selection.dart';
+import '../../reader/services/reader_mode.dart';
 import '../../sources/manga_source.dart';
+import '../../sources/extension_manga_source.dart';
 import '../../sources/source_manager.dart';
 import '../../download/download_manager.dart';
 import '../../novel_reader/screens/widgets/novel_chooser_sheet.dart';
 import '../../novel_reader/services/novel_repository.dart';
+import '../../extensions/widgets/source_access_actions.dart';
 
 class MangaDetailScreen extends StatefulWidget {
   final Manga manga;
 
   const MangaDetailScreen({super.key, required this.manga});
 
+  static bool isWebtoonManga(Manga manga) {
+    if (manga.type == PublicationType.manhwa ||
+        manga.type == PublicationType.manhua) {
+      return true;
+    }
+    if (manga.type == PublicationType.all) {
+      final detected = ExtensionMangaSource.determinePublicationType(
+        genres: manga.genres,
+        filterTypes: const {},
+        title: manga.title,
+      );
+      return detected == PublicationType.manhwa || detected == PublicationType.manhua;
+    }
+    return false;
+  }
+
   @override
   State<MangaDetailScreen> createState() => _MangaDetailScreenState();
 }
 
 class _MangaDetailScreenState extends State<MangaDetailScreen> {
-  MangaSource get _source {
+  MangaSource? get _source {
     if (widget.manga.sourceId.isNotEmpty) {
       return SourceManager.getSourceById(widget.manga.sourceId);
     }
@@ -34,14 +54,39 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
   final ScrollController _scrollController = ScrollController();
   List<Chapter> _chapters = [];
   bool _isLoadingChapters = true;
+  String? _chaptersErrorMessage;
   String? _description;
   NovelBook? _originalNovel;
+  ReaderMode _savedReaderMode = ReaderMode.auto;
+  bool _isOpeningReader = false;
 
   @override
   void initState() {
     super.initState();
     _loadChapters();
     _checkNovelOriginal();
+    _loadSavedReaderMode();
+  }
+
+  Future<void> _loadSavedReaderMode() async {
+    final mode = await ReaderModeResolver.getSavedPreference(
+      mangaId: widget.manga.id,
+      sourceId: widget.manga.sourceId,
+    );
+    if (mounted) {
+      setState(() => _savedReaderMode = mode);
+    }
+  }
+
+  Future<void> _onReaderModeSelected(ReaderMode mode) async {
+    await ReaderModeResolver.savePreference(
+      mangaId: widget.manga.id,
+      sourceId: widget.manga.sourceId,
+      mode: mode,
+    );
+    if (mounted) {
+      setState(() => _savedReaderMode = mode);
+    }
   }
 
   Future<void> _checkNovelOriginal() async {
@@ -58,57 +103,128 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
   }
 
   Future<void> _loadChapters() async {
-    final list = await _source.getChapters(widget.manga.id);
-    final desc = await _source.getDescription(widget.manga.id);
-    if (mounted) {
-      setState(() {
-        _chapters = list;
-        if (desc.isNotEmpty) _description = desc;
-        _isLoadingChapters = false;
-      });
+    setState(() {
+      _isLoadingChapters = true;
+      _chaptersErrorMessage = null;
+    });
+
+    try {
+      final source = _source;
+      if (source == null) {
+        if (DcatcherImage.isExtensionSourceId(widget.manga.sourceId)) {
+          throw MissingExtensionSourceException(
+            widget.manga.sourceId,
+            'Установленное расширение источника недоступно (ID: ${widget.manga.sourceId})',
+          );
+        }
+        throw StateError('Источник не найден для произведения: ${widget.manga.title}');
+      }
+
+      final list = await source.getChapters(widget.manga.id);
+      final desc = await source.getDescription(widget.manga.id);
+      if (mounted) {
+        setState(() {
+          _chapters = ChapterSelection.orderedChapters(list);
+          if (desc.isNotEmpty) _description = desc;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          if (e is MissingExtensionSourceException) {
+            _chaptersErrorMessage = e.message;
+          } else {
+            _chaptersErrorMessage = 'Ошибка при загрузке глав: $e';
+          }
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingChapters = false;
+        });
+      }
     }
   }
 
-  void _openReader(Chapter chapter) {
-    final isWebtoon = widget.manga.type == PublicationType.manhwa ||
-        widget.manga.type == PublicationType.manhua;
+  Future<void> _openReader(Chapter chapter) async {
+    if (_isOpeningReader) return;
+    _isOpeningReader = true;
 
-    if (isWebtoon) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => WebtoonReaderScreen(
-            manga: widget.manga,
-            chapter: chapter,
-          ),
-        ),
+    try {
+      final mode = await ReaderModeResolver.resolveEffectiveMode(
+        manga: widget.manga,
+        source: _source,
+        sampleChapterId: chapter.id,
+        isMetadataWebtoon: MangaDetailScreen.isWebtoonManga(widget.manga),
       );
-    } else {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => PagedReaderScreen(
-            manga: widget.manga,
-            chapter: chapter,
+
+      if (!mounted) return;
+
+      if (mode == ReaderMode.webtoon) {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => WebtoonReaderScreen(
+              manga: widget.manga,
+              chapter: chapter,
+              chapters: _chapters,
+            ),
           ),
-        ),
-      );
+        );
+      } else {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PagedReaderScreen(
+              manga: widget.manga,
+              chapter: chapter,
+              chapters: _chapters,
+            ),
+          ),
+        );
+      }
+    } finally {
+      _isOpeningReader = false;
     }
   }
 
   void _openInitialOrResumeChapter(LibraryItem? item) {
     if (_chapters.isEmpty) return;
 
-    Chapter? target;
-    if (item != null && item.lastChapterId.isNotEmpty) {
-      // Ищем главу, на которой остановились
-      target = _chapters.firstWhere(
-        (c) => c.id == item.lastChapterId,
-        orElse: () => _chapters.first,
+    final target = ChapterSelection.initialChapter(
+      _chapters,
+      resumeChapterId: item?.lastChapterId,
+    );
+
+    if (target == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Нет доступных бесплатных глав для чтения'),
+          backgroundColor: ShadcnColors.surface,
+          duration: Duration(seconds: 2),
+        ),
       );
-    } else {
-      // Ищем первую бесплатную главу
-      target = _chapters.firstWhere((c) => !c.isPaid, orElse: () => _chapters.first);
+      return;
+    }
+
+    _openReader(target);
+  }
+
+  void _openEarliestChapter() {
+    if (_chapters.isEmpty) return;
+
+    final target = ChapterSelection.initialChapter(_chapters);
+
+    if (target == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Нет доступных бесплатных глав для чтения'),
+          backgroundColor: ShadcnColors.surface,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
     }
 
     _openReader(target);
@@ -157,11 +273,83 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
                 ),
               ),
             ),
+            actions: [
+              if (_source != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xDD18181B),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: ShadcnColors.border),
+                    ),
+                    child: SourceAccessActions(
+                      sourceId: _source!.id,
+                      sourceName: _source!.name,
+                      onChanged: _loadChapters,
+                      customTrigger: const Padding(
+                        padding: EdgeInsets.all(8),
+                        child: Icon(Icons.public, color: ShadcnColors.foreground, size: 20),
+                      ),
+                    ),
+                  ),
+                ),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xDD18181B),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: ShadcnColors.border),
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.replay_rounded, color: ShadcnColors.foreground, size: 20),
+                    tooltip: 'Читать с начала',
+                    onPressed: _openEarliestChapter,
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xDD18181B),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: ShadcnColors.border),
+                  ),
+                  child: PopupMenuButton<ReaderMode>(
+                    tooltip: 'Режим чтения',
+                    icon: const Icon(Icons.chrome_reader_mode_outlined, color: ShadcnColors.foreground, size: 20),
+                    color: ShadcnColors.card,
+                    initialValue: _savedReaderMode,
+                    onSelected: _onReaderModeSelected,
+                    itemBuilder: (context) => [
+                      CheckedPopupMenuItem<ReaderMode>(
+                        value: ReaderMode.auto,
+                        checked: _savedReaderMode == ReaderMode.auto,
+                        child: const Text('Авто', style: TextStyle(color: ShadcnColors.foreground)),
+                      ),
+                      CheckedPopupMenuItem<ReaderMode>(
+                        value: ReaderMode.webtoon,
+                        checked: _savedReaderMode == ReaderMode.webtoon,
+                        child: const Text('Лента', style: TextStyle(color: ShadcnColors.foreground)),
+                      ),
+                      CheckedPopupMenuItem<ReaderMode>(
+                        value: ReaderMode.paged,
+                        checked: _savedReaderMode == ReaderMode.paged,
+                        child: const Text('Страницы', style: TextStyle(color: ShadcnColors.foreground)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
             flexibleSpace: FlexibleSpaceBar(
               background: Stack(
                 fit: StackFit.expand,
                 children: [
-                  CachedNetworkImage(
+                  DcatcherImage(
+                    sourceId: widget.manga.sourceId,
                     imageUrl: widget.manga.coverUrl,
                     fit: BoxFit.cover,
                   ),
@@ -278,9 +466,9 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
                               child: const Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.auto_stories, color: Color(0xFFE11D48), size: 13),
-                                  SizedBox(width: 4),
-                                  Text(
+                                   Icon(Icons.auto_stories, color: Color(0xFFE11D48), size: 13),
+                                   SizedBox(width: 4),
+                                   Text(
                                     'Ранобэ-оригинал',
                                     style: TextStyle(
                                       color: Color(0xFFE11D48),
@@ -358,6 +546,72 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
                 child: Padding(
                   padding: EdgeInsets.all(40),
                   child: CircularProgressIndicator(color: ShadcnColors.primary),
+                ),
+              ),
+            )
+          else if (_chaptersErrorMessage != null)
+            SliverToBoxAdapter(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    children: [
+                      const Icon(Icons.error_outline, color: ShadcnColors.exclude, size: 40),
+                      const SizedBox(height: 12),
+                      Text(
+                        _chaptersErrorMessage!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: ShadcnColors.exclude, fontSize: 13),
+                      ),
+                      const SizedBox(height: 16),
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 10,
+                        alignment: WrapAlignment.center,
+                        children: [
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: ShadcnColors.card,
+                              foregroundColor: ShadcnColors.foreground,
+                              side: const BorderSide(color: ShadcnColors.border),
+                            ),
+                            onPressed: _loadChapters,
+                            icon: const Icon(Icons.refresh, size: 18),
+                            label: const Text('Повторить попытку'),
+                          ),
+                          if (_source != null)
+                            SourceAccessActions(
+                              sourceId: _source!.id,
+                              sourceName: _source!.name,
+                              onChanged: _loadChapters,
+                              customTrigger: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: ShadcnColors.surface,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: ShadcnColors.border),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.public, color: ShadcnColors.primary, size: 18),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      'Войти / открыть сайт',
+                                      style: TextStyle(
+                                        color: ShadcnColors.foreground,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             )
@@ -520,7 +774,7 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
 
       // Плавающая кнопка внизу к первой главе / продолжению чтения
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-      floatingActionButton: _isLoadingChapters || _chapters.isEmpty
+      floatingActionButton: _isLoadingChapters || _chaptersErrorMessage != null || _chapters.isEmpty
           ? null
           : Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),

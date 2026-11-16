@@ -2,15 +2,26 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/book_item.dart';
+import '../models/book_catalog_page.dart';
+import 'book_offline_store.dart';
 import 'flibusta_service.dart';
 
 class BooksRepository {
   static final BooksRepository _instance = BooksRepository._internal();
   factory BooksRepository() => _instance;
-  BooksRepository._internal();
+  BooksRepository._internal({FlibustaService? flibusta})
+      : _offlineStore = BookOfflineStore(),
+        _flibusta = flibusta ?? FlibustaService();
 
-  final FlibustaService _flibusta = FlibustaService();
+  BooksRepository.withOfflineStore(BookOfflineStore store, {FlibustaService? flibusta})
+      : _offlineStore = store,
+        _flibusta = flibusta ?? FlibustaService();
+
+  final BookOfflineStore _offlineStore;
+  final FlibustaService _flibusta;
   final Map<String, List<BookChapter>> _chaptersCache = {};
+
+  static const String downloadedSource = 'Скачанные книги';
 
   static const List<String> genres = [
     'Все',
@@ -26,6 +37,7 @@ class BooksRepository {
     'Открытая библиотека классики',
     'Все источники',
     'Мои книги (.txt/.fb2)',
+    downloadedSource,
   ];
 
   static const List<BookItem> _curatedClassics = [
@@ -256,6 +268,114 @@ RACHE.
     ),
   ];
 
+  /// Checks whether a book matches the given genre using exact or semantic classification.
+  static bool matchesGenre(BookItem book, String genre) {
+    if (genre == 'Все' || genre.trim().isEmpty) return true;
+    if (book.genre == genre) return true;
+
+    final bookGenre = book.genre.toLowerCase();
+    final target = genre.toLowerCase().trim();
+
+    if (bookGenre == target) return true;
+
+    switch (target) {
+      case 'фантастика':
+        return bookGenre.contains('фантастик') ||
+            bookGenre.contains('фэнтези') ||
+            bookGenre.contains('fantasy') ||
+            bookGenre.contains('sci-fi') ||
+            bookGenre.startsWith('sf');
+      case 'мистика и ужасы':
+        return bookGenre.contains('мистик') ||
+            bookGenre.contains('ужас') ||
+            bookGenre.contains('хоррор') ||
+            bookGenre.contains('horror') ||
+            bookGenre.contains('gothic');
+      case 'детектив':
+        return bookGenre.contains('детектив') ||
+            bookGenre.contains('detective') ||
+            bookGenre.contains('криминал') ||
+            bookGenre.contains('триллер') ||
+            bookGenre.contains('thriller') ||
+            bookGenre.startsWith('det');
+      case 'приключения':
+        return bookGenre.contains('приключен') ||
+            bookGenre.contains('adventure') ||
+            bookGenre.startsWith('adv');
+      case 'классика':
+        return bookGenre.contains('класси') ||
+            bookGenre.contains('classic') ||
+            bookGenre.contains('prose_classic');
+      default:
+        return bookGenre.contains(target) || target.contains(bookGenre);
+    }
+  }
+
+  /// Multi-term and token-based search matcher across title, author, genre, and description.
+  static bool matchesSearch(BookItem book, String search) {
+    final q = search.trim().toLowerCase();
+    if (q.isEmpty) return true;
+
+    // 1. Direct single-token substring in title or author
+    if (book.title.toLowerCase().contains(q) || book.author.toLowerCase().contains(q)) {
+      return true;
+    }
+
+    // 2. Multi-token query across title, author, genre, description with Russian inflection support
+    final tokens = q.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+    if (tokens.length > 1) {
+      final combined = '${book.title} ${book.author} ${book.genre} ${book.description}'.toLowerCase();
+      if (tokens.every((token) => _textContainsToken(combined, token))) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  static bool _textContainsToken(String text, String token) {
+    if (text.contains(token)) return true;
+    if (token.length >= 4) {
+      final stem1 = token.substring(0, token.length - 1);
+      if (text.contains(stem1)) return true;
+      if (token.length >= 6) {
+        final stem2 = token.substring(0, token.length - 2);
+        if (text.contains(stem2)) return true;
+      }
+    }
+    return false;
+  }
+
+  /// Получение страницы каталога книг с поддержкой пагинации
+  Future<BookCatalogPage> getBooksPage({
+    String source = 'Флибуста (Flibusta.site)',
+    String genre = 'Все',
+    String search = '',
+    Uri? pageUri,
+  }) async {
+    if (source.contains('Флибуста') || source.contains('Flibusta')) {
+      final page = await _flibusta.searchFlibustaPage(search, pageUri: pageUri);
+      final filtered = page.items.where((book) {
+        if (!matchesGenre(book, genre)) {
+          return false;
+        }
+        if (search.trim().isNotEmpty) {
+          return matchesSearch(book, search);
+        }
+        return true;
+      }).toList();
+      return BookCatalogPage(
+        items: filtered,
+        nextPageUri: page.nextPageUri,
+        documentUri: page.documentUri,
+      );
+    }
+
+    // Non-Flibusta sources preserve curated/custom via getBooks without pagination
+    final all = await getBooks(source: source, genre: genre, search: search);
+    return BookCatalogPage(items: all, nextPageUri: null);
+  }
+
   /// Получение книг по источнику, жанру и поисковому запросу
   Future<List<BookItem>> getBooks({
     String source = 'Флибуста (Flibusta.site)',
@@ -264,7 +384,9 @@ RACHE.
   }) async {
     List<BookItem> baseList = [];
 
-    if (source.contains('Флибуста') || source.contains('Flibusta')) {
+    if (source == downloadedSource || source.contains(downloadedSource)) {
+      baseList = await _offlineStore.list();
+    } else if (source.contains('Флибуста') || source.contains('Flibusta')) {
       // Прямой доступ к каталогу Flibusta.site
       final flibustaBooks = await _flibusta.searchFlibusta(search);
       baseList = flibustaBooks;
@@ -281,14 +403,11 @@ RACHE.
 
     // Фильтрация по жанру и поисковой строке
     return baseList.where((book) {
-      if (genre != 'Все' && book.genre != genre) {
+      if (!matchesGenre(book, genre)) {
         return false;
       }
       if (search.trim().isNotEmpty) {
-        final q = search.trim().toLowerCase();
-        final matchTitle = book.title.toLowerCase().contains(q);
-        final matchAuthor = book.author.toLowerCase().contains(q);
-        return matchTitle || matchAuthor;
+        return matchesSearch(book, search);
       }
       return true;
     }).toList();
@@ -301,18 +420,68 @@ RACHE.
       return book.chapters;
     }
 
-    // 2. Если уже кешировали ранее
+    // 2. Если издание доступно только в PDF, встроенная читалка не подгружает онлайн-главы
+    if (book.isPdfOnly) {
+      throw const FormatException('Это издание доступно только в PDF. Встроенная читалка пока не поддерживает этот формат.');
+    }
+
+    // 3. Если уже кешировали ранее
     if (_chaptersCache.containsKey(book.id) && _chaptersCache[book.id]!.isNotEmpty) {
       return _chaptersCache[book.id]!;
     }
 
-    // 3. Загружаем онлайн с Flibusta.site
-    final fetched = await _flibusta.fetchBookChapters(book.id);
+    // 4. Пробуем загрузить с диска перед обращением к сети
+    try {
+      final offlineBook = await _offlineStore.load(book.id);
+      if (offlineBook != null && offlineBook.chapters.isNotEmpty) {
+        _chaptersCache[book.id] = offlineBook.chapters;
+        return offlineBook.chapters;
+      }
+    } catch (_) {
+      // Catch and continue online if disk directory is unavailable (e.g. widget tests without native path_provider)
+    }
+
+    // 5. Загружаем онлайн с Flibusta.site (с поддержкой HTML / EPUB / FB2)
+    final fetched = await _flibusta.fetchBookChapters(
+      book.id,
+      availableFormats: book.availableFormats,
+    );
     _chaptersCache[book.id] = fetched;
     return fetched;
   }
 
+  Future<void> saveBookOffline(
+    BookItem book, {
+    List<BookChapter>? chapters,
+  }) async {
+    final chaptersToSave = (chapters != null && chapters.isNotEmpty)
+        ? chapters
+        : (book.chapters.isNotEmpty ? book.chapters : await getBookChapters(book));
+    await _offlineStore.save(book, chaptersToSave);
+  }
+
+  Future<bool> isBookDownloaded(String id) async {
+    try {
+      final book = await _offlineStore.load(id);
+      return book != null;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> removeBookOffline(String id) async {
+    await _offlineStore.remove(id);
+    _chaptersCache.remove(id);
+  }
+
   Future<BookItem?> getBookById(String id) async {
+    try {
+      final offline = await _offlineStore.load(id);
+      if (offline != null) {
+        return offline;
+      }
+    } catch (_) {}
+
     final all = await getBooks(source: 'Все источники');
     try {
       return all.firstWhere((b) => b.id == id);

@@ -4,7 +4,7 @@ import '../../catalog/models/manga.dart';
 import '../../catalog/models/catalog_filters.dart';
 import '../../reader/models/chapter.dart';
 
-class AsuraScansSource implements MangaSource {
+class AsuraScansSource extends MangaSource {
   @override
   String get name => 'Asura Scans';
 
@@ -173,7 +173,6 @@ class AsuraScansSource implements MangaSource {
     int limit = 20,
   }) async {
     try {
-      // Пытаемся получить живой API каталог с fallback на топовый каталог Asura
       final filtered = _curatedAsuraManhwa.where((m) {
         if (!filters.publicationTypes.contains(m.type)) return false;
         if (!filters.contentRatings.contains(m.contentRating)) return false;
@@ -232,4 +231,10 @@ class AsuraScansSource implements MangaSource {
     final m = _curatedAsuraManhwa.firstWhere((x) => x.id == mangaId, orElse: () => _curatedAsuraManhwa.first);
     return m.description;
   }
+
+  @override
+  Future<Map<String, String>> getHeaders() async => const {};
+
+  @override
+  Future<Uint8List?> fetchImage(String url) async => null;
 }

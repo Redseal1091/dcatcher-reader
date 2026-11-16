@@ -1,9 +1,10 @@
+import 'dart:typed_data';
 import '../manga_source.dart';
 import '../../catalog/models/manga.dart';
 import '../../catalog/models/catalog_filters.dart';
 import '../../reader/models/chapter.dart';
 
-class MangaLibSource implements MangaSource {
+class MangaLibSource extends MangaSource {
   @override
   String get name => 'MangaLib';
 
@@ -142,5 +143,12 @@ class MangaLibSource implements MangaSource {
   Future<String> getDescription(String mangaId) async {
     final m = _curatedMangaLib.firstWhere((x) => x.id == mangaId, orElse: () => _curatedMangaLib.first);
     return m.description;
+  }
+
+  @override
+  Future<Map<String, String>> getHeaders() async => const {};
+
+  @override
+  Future<Uint8List?> fetchImage(String url) async { return null;
   }
 }

@@ -6,7 +6,7 @@ import '../../catalog/models/manga.dart';
 import '../../catalog/models/catalog_filters.dart';
 import '../../reader/models/chapter.dart';
 
-class MangaDexSource implements MangaSource {
+class MangaDexSource extends MangaSource {
   @override
   String get name => 'MangaDex';
 
@@ -318,5 +318,12 @@ class MangaDexSource implements MangaSource {
       }
       return true;
     }).toList();
+  }
+
+  @override
+  Future<Map<String, String>> getHeaders() async => defaultHeaders;
+
+  @override
+  Future<Uint8List?> fetchImage(String url) async { return null;
   }
 }

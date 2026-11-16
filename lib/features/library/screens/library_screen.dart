@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import '../../../core/widgets/dcatcher_image.dart';
 import '../../../core/theme/shadcn_colors.dart';
 import '../../../core/widgets/shadcn_badge.dart';
 import '../../../core/widgets/shadcn_button.dart';
@@ -12,6 +12,8 @@ import '../../catalog/screens/widgets/manga_card.dart';
 import '../../catalog/screens/manga_detail_screen.dart';
 import '../../download/download_manager.dart';
 import 'widgets/downloaded_tab.dart';
+import 'widgets/book_shelf_tab.dart';
+import '../state/book_shelf_provider.dart';
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
@@ -27,7 +29,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
   }
 
   @override
@@ -40,6 +42,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
   Widget build(BuildContext context) {
     final library = context.watch<LibraryProvider>();
     final catalog = context.watch<CatalogProvider>();
+    final bookShelf = context.watch<BookShelfProvider>();
 
     // Группировка тайтлов по статусам из каталога
     final readingList = catalog.mangaList.where((m) => library.getStatus(m.id) == UserMangaStatus.reading).toList();
@@ -76,13 +79,23 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.download_done_rounded, size: 15, color: Color(0xFF10B981)),
+                      Icon(_dm.activeDownloadsCount > 0 ? Icons.downloading_rounded : Icons.download_done_rounded, size: 15, color: _dm.activeDownloadsCount > 0 ? ShadcnColors.primary : const Color(0xFF10B981)),
                       const SizedBox(width: 5),
-                      Text('Скачанное (${_dm.downloadedCount})'),
+                      Text(_dm.activeDownloadsCount > 0 ? 'Скачанное (${_dm.downloadedCount} • ↓${_dm.activeDownloadsCount})' : 'Скачанное (${_dm.downloadedCount})'),
                     ],
                   ),
                 );
               },
+            ),
+            Tab(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.shelves, size: 15, color: Color(0xFFD4A373)),
+                  const SizedBox(width: 5),
+                  Text('Книжная полка (${bookShelf.items.length})'),
+                ],
+              ),
             ),
             Tab(text: 'Прочитано (${completedList.length})'),
             Tab(text: 'В планах (${plannedList.length})'),
@@ -104,6 +117,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
         children: [
           _buildMangaGrid(readingList, library),
           const DownloadedTab(),
+          const BookShelfTab(),
           _buildMangaGrid(completedList, library),
           _buildMangaGrid(plannedList, library),
           _buildBlacklistTab(blacklistedMap, library),
@@ -217,7 +231,8 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: coverUrl.isNotEmpty
-                    ? CachedNetworkImage(
+                    ? DcatcherImage(
+                        sourceId: mangaId.contains('::') ? mangaId.split('::').first : null,
                         imageUrl: coverUrl,
                         width: 44,
                         height: 60,

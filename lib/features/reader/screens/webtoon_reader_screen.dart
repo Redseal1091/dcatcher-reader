@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../../../core/widgets/dcatcher_image.dart';
 import 'package:provider/provider.dart';
 import '../../../core/theme/shadcn_colors.dart';
 import '../../../core/widgets/frosted_glass.dart';
@@ -12,15 +13,23 @@ import '../../sources/source_manager.dart';
 import '../../library/state/library_provider.dart';
 import '../../library/models/library_item.dart';
 import '../../download/download_manager.dart';
+import '../models/manga_reader_settings.dart';
+import '../widgets/reader_settings_bottom_sheet.dart';
+import 'paged_reader_screen.dart';
+import '../services/reader_mode.dart';
 
 class WebtoonReaderScreen extends StatefulWidget {
   final Manga manga;
   final Chapter chapter;
+  final MangaSource? source;
+  final List<Chapter>? chapters;
 
   const WebtoonReaderScreen({
     super.key,
     required this.manga,
     required this.chapter,
+    this.source,
+    this.chapters,
   });
 
   @override
@@ -28,11 +37,15 @@ class WebtoonReaderScreen extends StatefulWidget {
 }
 
 class _WebtoonReaderScreenState extends State<WebtoonReaderScreen> {
-  late final MangaSource _source;
+  MangaSource? _source;
+  late Chapter _currentChapter;
   List<String> _pageUrls = [];
   bool _isLoading = true;
+  bool _hasError = false;
+  String? _errorMessage;
   bool _showControls = true;
   bool _isOffline = false;
+  int _approxCurrentIndex = 0;
   final ScrollController _scrollController = ScrollController();
   final Set<int> _preloadedIndices = {};
 
@@ -44,14 +57,14 @@ class _WebtoonReaderScreenState extends State<WebtoonReaderScreen> {
     if (url.contains('mangabuff.ru')) {
       return const {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Referer': 'https://mangabuff.ru/',
+        'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
         'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
       };
     }
     if (url.contains('remanga.org')) {
       return const {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Referer': 'https://remanga.org/',
+        'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
         'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
       };
     }
@@ -64,23 +77,30 @@ class _WebtoonReaderScreenState extends State<WebtoonReaderScreen> {
   @override
   void initState() {
     super.initState();
-    _source = SourceManager.getSourceById(
-      widget.manga.sourceId.isNotEmpty ? widget.manga.sourceId : 'mangadex',
+    _currentChapter = widget.chapter;
+    _source = widget.source ?? SourceManager.getSourceById(
+      widget.manga.sourceId,
     );
     _loadPages();
     _scrollController.addListener(_onScroll);
 
     // Автоматически фиксируем главу и статус чтения
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final library = context.read<LibraryProvider>();
-      library.updateProgress(
-        mangaId: widget.manga.id,
-        chapterId: widget.chapter.id,
-        chapterNumber: widget.chapter.chapterNumber,
-        title: widget.manga.title,
-        coverUrl: widget.manga.coverUrl,
-      );
+      _updateProgress();
     });
+  }
+
+  void _updateProgress() {
+    if (!mounted) return;
+    final library = context.read<LibraryProvider>();
+    library.updateProgress(
+      mangaId: widget.manga.id,
+      sourceId: widget.manga.sourceId,
+      chapterId: _currentChapter.id,
+      chapterNumber: _currentChapter.chapterNumber,
+      title: widget.manga.title,
+      coverUrl: widget.manga.coverUrl,
+    );
   }
 
   void _onScroll() {
@@ -89,14 +109,80 @@ class _WebtoonReaderScreenState extends State<WebtoonReaderScreen> {
     if (maxScroll <= 0) return;
 
     final progress = (_scrollController.offset / maxScroll).clamp(0.0, 1.0);
-    final approxCurrentIndex = (progress * _pageUrls.length).floor();
+    final approx = (progress * _pageUrls.length).floor().clamp(0, _pageUrls.isEmpty ? 0 : _pageUrls.length - 1);
+    if (approx != _approxCurrentIndex) {
+      setState(() => _approxCurrentIndex = approx);
+    }
 
     // Заблаговременно предзагружаем следующие 6 изображений в фоне
-    _preloadUpcomingImages(approxCurrentIndex, 6);
+    _preloadUpcomingImages(approx, 6);
+  }
+
+  void _switchChapter(Chapter newChapter) {
+    if (_autoScrollSpeed > 0) {
+      _stopAutoScroll();
+    }
+    setState(() {
+      _currentChapter = newChapter;
+      _pageUrls = [];
+      _approxCurrentIndex = 0;
+      _preloadedIndices.clear();
+    });
+    if (_scrollController.hasClients) {
+      _scrollController.jumpTo(0);
+    }
+    _loadPages();
+    _updateProgress();
+  }
+
+  void _openSettings() {
+    final settings = MangaReaderSettings.of(context, listen: false);
+    ReaderSettingsBottomSheet.show(
+      context: context,
+      settings: settings,
+      currentIndex: _approxCurrentIndex,
+      totalPages: _pageUrls.length,
+      onPageSelected: (page) {
+        if (!_scrollController.hasClients || _pageUrls.isEmpty) return;
+        final maxScroll = _scrollController.position.maxScrollExtent;
+        final targetOffset = (page / _pageUrls.length) * maxScroll;
+        _scrollController.jumpTo(targetOffset);
+        setState(() => _approxCurrentIndex = page);
+      },
+      onReadingModeChanged: (mode) {
+        if (mode != MangaReadingMode.webtoon) {
+          ReaderModeResolver.savePreference(
+            mangaId: widget.manga.id,
+            sourceId: widget.manga.sourceId,
+            mode: ReaderMode.paged,
+          );
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => PagedReaderScreen(
+                manga: widget.manga,
+                chapter: _currentChapter,
+                source: _source,
+                chapters: widget.chapters,
+              ),
+            ),
+          );
+        }
+      },
+      currentChapter: _currentChapter,
+      chapters: widget.chapters,
+      onChapterSelected: (newChapter) {
+        _switchChapter(newChapter);
+      },
+    );
   }
 
   void _preloadUpcomingImages(int startIndex, int count) {
     if (!mounted || _isOffline) return;
+    // Extension source images must pass through native bridge interceptors
+    // and not leak directly via CachedNetworkImage HTTP prefetch
+    if (DcatcherImage.isExtensionSourceId(widget.manga.sourceId)) return;
+
     for (int i = startIndex; i < startIndex + count && i < _pageUrls.length; i++) {
       if (i < 0 || _preloadedIndices.contains(i)) continue;
       _preloadedIndices.add(i);
@@ -111,32 +197,77 @@ class _WebtoonReaderScreenState extends State<WebtoonReaderScreen> {
   }
 
   Future<void> _loadPages() async {
-    // 1. Проверяем, скачана ли глава офлайн в память телефона
-    final offlinePages = await DownloadManager().getOfflinePages(widget.chapter.id);
-    if (offlinePages != null && offlinePages.isNotEmpty) {
+    setState(() {
+      _isLoading = true;
+      _hasError = false;
+      _errorMessage = null;
+    });
+
+    try {
+      // 1. Проверяем, скачана ли глава офлайн в память телефона
+      final offlinePages = await DownloadManager().getOfflinePages(_currentChapter.id);
+      if (offlinePages != null && offlinePages.isNotEmpty) {
+        if (mounted) {
+          setState(() {
+            _pageUrls = offlinePages;
+            _isOffline = true;
+            _isLoading = false;
+            _hasError = false;
+          });
+        }
+        return;
+      }
+
+      // 2. Иначе грузим из сети
+      final source = _source ?? SourceManager.getSourceById(widget.manga.sourceId);
+      if (source == null) {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _hasError = true;
+            _errorMessage = 'Источник (${widget.manga.sourceId}) не найден или не установлен';
+          });
+        }
+        return;
+      }
+
+      final pages = await source.getChapterPages(_currentChapter.id).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => throw TimeoutException('Превышено время ожидания ответа от источника (15 сек)'),
+      );
+
+      if (mounted) {
+        if (pages.isEmpty) {
+          setState(() {
+            _pageUrls = [];
+            _isOffline = false;
+            _isLoading = false;
+            _hasError = true;
+            _errorMessage = 'Страницы не найдены. Возможно, глава пуста или защищена платным доступом.';
+          });
+        } else {
+          setState(() {
+            _pageUrls = pages;
+            _isOffline = false;
+            _isLoading = false;
+            _hasError = false;
+            _errorMessage = null;
+          });
+
+          // Мгновенно запускаем упреждающую предзагрузку первых 5 страниц
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _preloadUpcomingImages(0, 5);
+          });
+        }
+      }
+    } catch (e) {
       if (mounted) {
         setState(() {
-          _pageUrls = offlinePages;
-          _isOffline = true;
           _isLoading = false;
+          _hasError = true;
+          _errorMessage = e.toString().replaceAll('Exception: ', '');
         });
       }
-      return;
-    }
-
-    // 2. Иначе грузим из сети
-    final pages = await _source.getChapterPages(widget.chapter.id);
-    if (mounted) {
-      setState(() {
-        _pageUrls = pages;
-        _isOffline = false;
-        _isLoading = false;
-      });
-
-      // Мгновенно запускаем упреждающую предзагрузку первых 5 страниц
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _preloadUpcomingImages(0, 5);
-      });
     }
   }
 
@@ -187,38 +318,61 @@ class _WebtoonReaderScreenState extends State<WebtoonReaderScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final settings = MangaReaderSettings.of(context, listen: true);
+
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: settings.theme.backgroundColor,
       body: Stack(
         children: [
           if (_isLoading)
             const Center(
               child: CircularProgressIndicator(),
             )
-          else if (_pageUrls.isEmpty)
+          else if (_hasError || _pageUrls.isEmpty)
             Center(
               child: Padding(
                 padding: const EdgeInsets.all(32),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.menu_book, size: 48, color: ShadcnColors.mutedForeground),
+                    Icon(
+                      _pageUrls.isEmpty && (_errorMessage?.contains('не найдены') ?? false)
+                          ? Icons.menu_book
+                          : Icons.error_outline_rounded,
+                      size: 48,
+                      color: _pageUrls.isEmpty && (_errorMessage?.contains('не найдены') ?? false)
+                          ? ShadcnColors.mutedForeground
+                          : ShadcnColors.exclude,
+                    ),
                     const SizedBox(height: 16),
-                    const Text(
-                      'Страницы не найдены',
-                      style: TextStyle(color: ShadcnColors.foreground, fontSize: 16, fontWeight: FontWeight.w600),
+                    Text(
+                      _pageUrls.isEmpty && (_errorMessage?.contains('не найдены') ?? false)
+                          ? 'Страницы не найдены'
+                          : 'Ошибка загрузки страниц',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: ShadcnColors.foreground, fontSize: 16, fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 8),
-                    const Text(
-                      'Возможно, глава защищена платным доступом на сайте источника.',
+                    Text(
+                      _errorMessage ?? 'Возможно, глава защищена платным доступом на сайте источника.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: ShadcnColors.mutedForeground, fontSize: 13),
+                      style: const TextStyle(color: ShadcnColors.mutedForeground, fontSize: 13),
                     ),
-                    const SizedBox(height: 20),
-                    ElevatedButton(
+                    const SizedBox(height: 24),
+                    ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: ShadcnColors.primary,
                         foregroundColor: ShadcnColors.primaryForeground,
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      ),
+                      onPressed: _loadPages,
+                      icon: const Icon(Icons.refresh, size: 18),
+                      label: const Text('Повторить попытку'),
+                    ),
+                    const SizedBox(height: 12),
+                    TextButton(
+                      style: TextButton.styleFrom(
+                        foregroundColor: ShadcnColors.mutedForeground,
                       ),
                       onPressed: () => Navigator.pop(context),
                       child: const Text('Назад к списку глав'),
@@ -245,20 +399,50 @@ class _WebtoonReaderScreenState extends State<WebtoonReaderScreen> {
                 itemBuilder: (context, index) {
                   final path = _pageUrls[index];
 
-                  return _WebtoonZoomablePage(
-                    path: path,
-                    index: index,
-                    isOffline: _isOffline,
-                    headers: _getImageHeaders(path),
-                    onTap: () {
-                      if (_autoScrollSpeed > 0) {
-                        _stopAutoScroll();
-                      } else {
-                        setState(() => _showControls = !_showControls);
-                      }
-                    },
+                  return Padding(
+                    padding: EdgeInsets.only(bottom: settings.pageSpacing),
+                    child: _WebtoonZoomablePage(
+                      sourceId: widget.manga.sourceId,
+                      path: path,
+                      index: index,
+                      isOffline: _isOffline,
+                      headers: _getImageHeaders(path),
+                      fit: settings.imageFit.boxFit,
+                      onTap: () {
+                        if (_autoScrollSpeed > 0) {
+                          _stopAutoScroll();
+                        } else {
+                          setState(() => _showControls = !_showControls);
+                        }
+                      },
+                    ),
                   );
                 },
+              ),
+            ),
+
+          // Ненавязчивый бейдж с номером страницы в углу при скрытых панелях управления
+          if (!_showControls && settings.showPageNumberOverlay && !_hasError && _pageUrls.isNotEmpty)
+            Positioned(
+              bottom: 16,
+              right: 16,
+              child: SafeArea(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.65),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                  ),
+                  child: Text(
+                    '${_approxCurrentIndex + 1} / ${_pageUrls.length}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
               ),
             ),
 
@@ -266,7 +450,7 @@ class _WebtoonReaderScreenState extends State<WebtoonReaderScreen> {
           AnimatedPositioned(
             duration: const Duration(milliseconds: 220),
             curve: Curves.easeInOutCubic,
-            top: _showControls ? 0 : -100,
+            top: (_showControls || _hasError || _pageUrls.isEmpty) ? 0 : -100,
             left: 0,
             right: 0,
             child: SafeArea(
@@ -317,7 +501,7 @@ class _WebtoonReaderScreenState extends State<WebtoonReaderScreen> {
                               ],
                             ),
                             Text(
-                              widget.chapter.displayName,
+                              _currentChapter.displayName,
                               style: const TextStyle(
                                 color: ShadcnColors.mutedForeground,
                                 fontSize: 12,
@@ -335,6 +519,12 @@ class _WebtoonReaderScreenState extends State<WebtoonReaderScreen> {
                         ),
                         tooltip: 'Автоскролл',
                         onPressed: _toggleAutoScroll,
+                      ),
+                      // Кнопка настроек читалки
+                      IconButton(
+                        icon: const Icon(Icons.settings_outlined, color: ShadcnColors.foreground, size: 22),
+                        tooltip: 'Настройки читалки',
+                        onPressed: _openSettings,
                       ),
                     ],
                   ),
@@ -399,7 +589,7 @@ class _WebtoonReaderScreenState extends State<WebtoonReaderScreen> {
           AnimatedPositioned(
             duration: const Duration(milliseconds: 220),
             curve: Curves.easeInOutCubic,
-            bottom: _showControls ? 20 : -90,
+            bottom: (_showControls && !_hasError && _pageUrls.isNotEmpty) ? 20 : -90,
             left: 20,
             right: 20,
             child: SafeArea(
@@ -410,50 +600,61 @@ class _WebtoonReaderScreenState extends State<WebtoonReaderScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.zoom_in, size: 16, color: ShadcnColors.mutedForeground),
-                        const SizedBox(width: 4),
-                        const Text(
-                          'Увеличение пальцами',
-                          style: TextStyle(
-                            color: ShadcnColors.mutedForeground,
-                            fontSize: 11,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
+                        const Icon(Icons.auto_stories_outlined, size: 16, color: ShadcnColors.mutedForeground),
+                        const SizedBox(width: 6),
                         Text(
-                          '•  ${_pageUrls.length} стр.',
+                          '${_pageUrls.length} стр.',
                           style: const TextStyle(
                             color: ShadcnColors.mutedForeground,
-                            fontSize: 11,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                       ],
                     ),
-                    Consumer<LibraryProvider>(
-                      builder: (context, library, _) {
-                        final isCompleted = library.getStatus(widget.manga.id) == UserMangaStatus.completed;
-                        return TextButton.icon(
-                          icon: Icon(
-                            isCompleted ? Icons.check_circle : Icons.check_circle_outline,
-                            size: 16,
-                            color: isCompleted ? ShadcnColors.completed : ShadcnColors.foreground,
-                          ),
-                          label: Text(
-                            isCompleted ? 'Прочитано' : 'Отметить прочитанным',
-                            style: TextStyle(
-                              color: isCompleted ? ShadcnColors.completed : ShadcnColors.foreground,
-                              fontSize: 12,
-                            ),
-                          ),
-                          onPressed: () {
-                            library.setStatus(
-                              widget.manga.id,
-                              isCompleted ? UserMangaStatus.reading : UserMangaStatus.completed,
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Consumer<LibraryProvider>(
+                          builder: (context, library, _) {
+                            final isCompleted = library.getStatus(widget.manga.id) == UserMangaStatus.completed;
+                            return TextButton.icon(
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              icon: Icon(
+                                isCompleted ? Icons.check_circle : Icons.check_circle_outline,
+                                size: 16,
+                                color: isCompleted ? ShadcnColors.completed : ShadcnColors.foreground,
+                              ),
+                              label: Text(
+                                isCompleted ? 'Прочитано' : 'Отметить',
+                                style: TextStyle(
+                                  color: isCompleted ? ShadcnColors.completed : ShadcnColors.foreground,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              onPressed: () {
+                                library.setStatus(
+                                  widget.manga.id,
+                                  isCompleted ? UserMangaStatus.reading : UserMangaStatus.completed,
+                                );
+                              },
                             );
                           },
-                        );
-                      },
+                        ),
+                        const SizedBox(width: 4),
+                        IconButton(
+                          padding: const EdgeInsets.all(6),
+                          constraints: const BoxConstraints(),
+                          icon: const Icon(Icons.settings_outlined, color: ShadcnColors.foreground, size: 20),
+                          tooltip: 'Настройки читалки',
+                          onPressed: _openSettings,
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -473,6 +674,8 @@ class _WebtoonZoomablePage extends StatefulWidget {
   final int index;
   final bool isOffline;
   final Map<String, String> headers;
+  final String? sourceId;
+  final BoxFit fit;
   final VoidCallback onTap;
 
   const _WebtoonZoomablePage({
@@ -480,6 +683,8 @@ class _WebtoonZoomablePage extends StatefulWidget {
     required this.index,
     required this.isOffline,
     required this.headers,
+    this.sourceId,
+    this.fit = BoxFit.fitWidth,
     required this.onTap,
   });
 
@@ -552,14 +757,15 @@ class _WebtoonZoomablePageState extends State<_WebtoonZoomablePage> with SingleT
         child: widget.isOffline
             ? Image.file(
                 File(widget.path),
-                fit: BoxFit.fitWidth,
+                fit: widget.fit,
               )
-            : CachedNetworkImage(
+            : DcatcherImage(
+                sourceId: widget.sourceId,
                 imageUrl: widget.path,
-                httpHeaders: widget.headers,
-                fit: BoxFit.fitWidth,
+                headers: widget.headers,
+                fit: widget.fit,
                 memCacheWidth: 1080,
-                fadeInDuration: const Duration(milliseconds: 180),
+
                 placeholder: (context, url) => Container(
                   height: 400,
                   color: const Color(0xFF101014),
@@ -584,18 +790,30 @@ class _WebtoonZoomablePageState extends State<_WebtoonZoomablePage> with SingleT
                     ),
                   ),
                 ),
-                errorWidget: (context, url, err) => Container(
-                  height: 200,
+                errorRetryWidget: (context, url, err, retry) => Container(
+                  height: 220,
                   color: const Color(0xFF18181B),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
                   child: Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.broken_image, color: ShadcnColors.mutedForeground, size: 28),
-                        const SizedBox(height: 6),
+                        const Icon(Icons.refresh_rounded, color: ShadcnColors.primary, size: 30),
+                        const SizedBox(height: 8),
                         Text(
                           'Стр. ${widget.index + 1} не загрузилась',
-                          style: const TextStyle(color: ShadcnColors.mutedForeground, fontSize: 12),
+                          style: const TextStyle(color: ShadcnColors.foreground, fontSize: 13, fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 10),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: ShadcnColors.primary,
+                            foregroundColor: ShadcnColors.primaryForeground,
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          ),
+                          onPressed: retry,
+                          icon: const Icon(Icons.replay_rounded, size: 16),
+                          label: const Text('Повторить загрузку'),
                         ),
                       ],
                     ),

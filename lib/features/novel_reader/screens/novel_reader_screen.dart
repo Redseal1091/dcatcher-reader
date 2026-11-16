@@ -1,20 +1,32 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/theme/shadcn_colors.dart';
 import '../../../core/widgets/frosted_glass.dart';
 import '../models/novel_chapter.dart';
 import '../models/reader_settings.dart';
+import '../services/novel_repository.dart';
+import '../../books/services/book_progress_service.dart';
+import '../../library/state/book_shelf_provider.dart';
 
 class NovelReaderScreen extends StatefulWidget {
   final String novelTitle;
   final NovelChapter chapter;
   final List<NovelChapter> allChapters;
+  final String? bookId;
+  final String? source;
+  final double? initialScrollOffset;
+  final void Function(String chapterId, String chapterTitle, double scrollOffset, double readPercent)? onProgressChanged;
 
   const NovelReaderScreen({
     super.key,
     required this.novelTitle,
     required this.chapter,
     this.allChapters = const [],
+    this.bookId,
+    this.source,
+    this.initialScrollOffset,
+    this.onProgressChanged,
   });
 
   @override
@@ -25,23 +37,197 @@ class _NovelReaderScreenState extends State<NovelReaderScreen> {
   final ScrollController _scrollController = ScrollController();
   bool _showControls = true;
   double _readPercent = 0.0;
-  bool _isSpeaking = false;
+  late NovelChapter _activeChapter;
+  Timer? _saveDebounceTimer;
+  bool _isLoadingContent = false;
+  String? _contentError;
 
   @override
   void initState() {
     super.initState();
+    _activeChapter = widget.chapter;
     _scrollController.addListener(_updateProgress);
+
+    if (_activeChapter.content.trim().isEmpty) {
+      _ensureChapterContentLoaded(_activeChapter);
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (widget.initialScrollOffset != null && widget.initialScrollOffset! > 0) {
+        if (_scrollController.hasClients) {
+          _scrollController.jumpTo(widget.initialScrollOffset!);
+        }
+      } else if (widget.bookId != null && widget.bookId!.isNotEmpty) {
+        final saved = await BookProgressService.getProgress(widget.bookId!);
+        if (saved != null && saved.chapterId == _activeChapter.id && saved.scrollOffset > 0) {
+          if (mounted && _scrollController.hasClients) {
+            _scrollController.jumpTo(saved.scrollOffset);
+            setState(() {
+              _readPercent = saved.readPercent;
+            });
+          }
+        }
+      }
+    });
+  }
+
+  Future<void> _ensureChapterContentLoaded(NovelChapter chapter) async {
+    if (chapter.content.trim().isNotEmpty) {
+      if (mounted) setState(() => _contentError = null);
+      return;
+    }
+
+    setState(() {
+      _isLoadingContent = true;
+      _contentError = null;
+    });
+
+    try {
+      final text = await NovelRepository().getChapterContent(chapter, source: widget.source);
+      if (!mounted) return;
+      if (text.isEmpty || text.startsWith('Ошибка загрузки главы')) {
+        setState(() {
+          _isLoadingContent = false;
+          _contentError = text.isNotEmpty ? text : 'Не удалось загрузить содержимое главы.';
+        });
+      } else {
+        setState(() {
+          _activeChapter = chapter.copyWith(content: text);
+          _isLoadingContent = false;
+          _contentError = null;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingContent = false;
+        _contentError = 'Ошибка сети: $e';
+      });
+    }
+  }
+
+  void _saveProgress() {
+    if (!_scrollController.hasClients) return;
+    final offset = _scrollController.offset;
+    final percent = _readPercent;
+
+    if (widget.bookId != null && widget.bookId!.isNotEmpty) {
+      BookProgressService.saveProgress(
+        BookProgress(
+          bookId: widget.bookId!,
+          chapterId: _activeChapter.id,
+          chapterTitle: _activeChapter.title,
+          chapterNumber: _activeChapter.chapterNumber,
+          scrollOffset: offset,
+          readPercent: percent,
+          updatedAt: DateTime.now(),
+        ),
+      );
+
+      try {
+        final shelf = Provider.of<BookShelfProvider>(context, listen: false);
+        shelf.updateBookProgress(
+          bookId: widget.bookId!,
+          chapterId: _activeChapter.id,
+          chapterTitle: _activeChapter.title,
+          scrollOffset: offset,
+          readPercent: percent,
+        );
+      } catch (_) {}
+    }
+
+    widget.onProgressChanged?.call(
+      _activeChapter.id,
+      _activeChapter.title,
+      offset,
+      percent,
+    );
+  }
+
+  void _debouncedSaveProgress() {
+    _saveDebounceTimer?.cancel();
+    _saveDebounceTimer = Timer(const Duration(milliseconds: 400), () {
+      if (mounted) {
+        _saveProgress();
+      }
+    });
+  }
+
+  int get _activeChapterIndex {
+    if (widget.allChapters.isEmpty) return -1;
+    return widget.allChapters.indexWhere((c) => c.id == _activeChapter.id);
+  }
+
+  bool get _hasPreviousChapter {
+    final idx = _activeChapterIndex;
+    return idx > 0;
+  }
+
+  bool get _hasNextChapter {
+    final idx = _activeChapterIndex;
+    return idx >= 0 && idx < widget.allChapters.length - 1;
+  }
+
+  String _formatChapterLabel(NovelChapter chapter) {
+    final num = chapter.chapterNumber.trim();
+    final title = chapter.title.trim();
+    final lowerTitle = title.toLowerCase();
+
+    if (num == '0' || lowerTitle.contains('пролог') || lowerTitle.contains('введение')) {
+      if (lowerTitle.contains('введение')) {
+        return 'Введение';
+      }
+      if (lowerTitle.contains('пролог')) {
+        return 'Пролог';
+      }
+      return 'Введение';
+    }
+
+    final partMatch = RegExp(r'^Часть\s*(\d+|[IVXLCDM]+)', caseSensitive: false).firstMatch(title);
+    if (partMatch != null) {
+      return partMatch.group(0)!;
+    }
+    if (lowerTitle.startsWith('часть')) {
+      return 'Часть $num';
+    }
+
+    final chapterMatch = RegExp(r'^Глава\s*(\d+|[IVXLCDM]+)', caseSensitive: false).firstMatch(title);
+    if (chapterMatch != null) {
+      return chapterMatch.group(0)!;
+    }
+
+    if (num.isNotEmpty && num != 'null') {
+      return 'Глава $num';
+    }
+    return title.isNotEmpty ? title : 'Глава';
+  }
+
+  void _navigateToChapter(int newIndex) {
+    if (newIndex < 0 || newIndex >= widget.allChapters.length) return;
+    _saveProgress();
+    setState(() {
+      _activeChapter = widget.allChapters[newIndex];
+      _readPercent = 0.0;
+    });
+    if (_scrollController.hasClients) {
+      _scrollController.jumpTo(0.0);
+    }
+    _ensureChapterContentLoaded(_activeChapter);
+    _saveProgress();
   }
 
   void _updateProgress() {
     if (_scrollController.hasClients && _scrollController.position.maxScrollExtent > 0) {
       final p = (_scrollController.offset / _scrollController.position.maxScrollExtent).clamp(0.0, 1.0);
       setState(() => _readPercent = p);
+      _debouncedSaveProgress();
     }
   }
 
   @override
   void dispose() {
+    _saveDebounceTimer?.cancel();
+    _saveProgress();
     _scrollController.dispose();
     super.dispose();
   }
@@ -154,11 +340,126 @@ class _NovelReaderScreenState extends State<NovelReaderScreen> {
                       setModalState(() {});
                     },
                   ),
+
+                  const SizedBox(height: 12),
+
+                  // Выбор шрифта
+                  const Text(
+                    'Шрифт',
+                    style: TextStyle(color: ShadcnColors.mutedForeground, fontSize: 13),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      _buildFontFamilyChip('Sans', 'Roboto', settings, () {
+                        settings.setFontFamily('Roboto');
+                        setModalState(() {});
+                      }),
+                      const SizedBox(width: 8),
+                      _buildFontFamilyChip('Serif', 'serif', settings, () {
+                        settings.setFontFamily('serif');
+                        setModalState(() {});
+                      }),
+                      const SizedBox(width: 8),
+                      _buildFontFamilyChip('Mono', 'monospace', settings, () {
+                        settings.setFontFamily('monospace');
+                        setModalState(() {});
+                      }),
+                    ],
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Выравнивание текста
+                  const Text(
+                    'Выравнивание',
+                    style: TextStyle(color: ShadcnColors.mutedForeground, fontSize: 13),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      _buildAlignChip('По ширине', TextAlign.justify, Icons.format_align_justify, settings, () {
+                        settings.setTextAlign(TextAlign.justify);
+                        setModalState(() {});
+                      }),
+                      const SizedBox(width: 8),
+                      _buildAlignChip('По левому краю', TextAlign.start, Icons.format_align_left, settings, () {
+                        settings.setTextAlign(TextAlign.start);
+                        setModalState(() {});
+                      }),
+                    ],
+                  ),
                 ],
               ),
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildFontFamilyChip(String label, String family, ReaderSettings settings, VoidCallback onSelect) {
+    final isSelected = settings.fontFamily == family;
+    return Expanded(
+      child: GestureDetector(
+        onTap: onSelect,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected ? ShadcnColors.primary.withValues(alpha: 0.15) : ShadcnColors.card,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isSelected ? ShadcnColors.primary : ShadcnColors.border,
+              width: isSelected ? 1.5 : 1,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontFamily: family,
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                color: isSelected ? ShadcnColors.primary : ShadcnColors.mutedForeground,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAlignChip(String label, TextAlign align, IconData icon, ReaderSettings settings, VoidCallback onSelect) {
+    final isSelected = settings.textAlign == align;
+    return Expanded(
+      child: GestureDetector(
+        onTap: onSelect,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+          decoration: BoxDecoration(
+            color: isSelected ? ShadcnColors.primary.withValues(alpha: 0.15) : ShadcnColors.card,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isSelected ? ShadcnColors.primary : ShadcnColors.border,
+              width: isSelected ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 16, color: isSelected ? ShadcnColors.primary : ShadcnColors.mutedForeground),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                  color: isSelected ? ShadcnColors.primary : ShadcnColors.mutedForeground,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -198,76 +499,132 @@ class _NovelReaderScreenState extends State<NovelReaderScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final activeChapter = _activeChapter;
+    final activeIndex = _activeChapterIndex;
+    final hasPrev = _hasPreviousChapter;
+    final hasNext = _hasNextChapter;
+
     return ChangeNotifierProvider(
       create: (_) => ReaderSettings(),
       child: Consumer<ReaderSettings>(
         builder: (context, settings, _) {
-          final paragraphs = widget.chapter.content
+          final paragraphs = activeChapter.content
               .split('\n')
               .map((s) => s.trim())
               .where((s) => s.isNotEmpty)
               .toList();
 
-          return Scaffold(
-            backgroundColor: settings.backgroundColor,
-            body: Stack(
-              children: [
-                // Основной читаемый текст новеллы
-                GestureDetector(
-                  onTap: () => setState(() => _showControls = !_showControls),
-                  child: ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.fromLTRB(24, 100, 24, 120),
-                    itemCount: paragraphs.length + 1,
-                    itemBuilder: (context, index) {
-                      if (index == 0) {
+          return PopScope(
+            canPop: true,
+            onPopInvokedWithResult: (didPop, result) {
+              _saveProgress();
+            },
+            child: Scaffold(
+              backgroundColor: settings.backgroundColor,
+              body: SafeArea(
+                child: Stack(
+                  children: [
+                  // Основной читаемый текст новеллы
+                  if (_isLoadingContent)
+                    Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const CircularProgressIndicator(color: ShadcnColors.primary, strokeWidth: 2),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Загрузка текста главы...',
+                            style: TextStyle(color: settings.textColor.withValues(alpha: 0.7), fontSize: 14),
+                          ),
+                        ],
+                      ),
+                    )
+                  else if (_contentError != null)
+                    Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.error_outline_rounded, color: Color(0xFFEF4444), size: 44),
+                            const SizedBox(height: 12),
+                            Text(
+                              _contentError!,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: settings.textColor, fontSize: 14),
+                            ),
+                            const SizedBox(height: 16),
+                            ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: ShadcnColors.primary,
+                                foregroundColor: ShadcnColors.primaryForeground,
+                              ),
+                              onPressed: () => _ensureChapterContentLoaded(_activeChapter),
+                              icon: const Icon(Icons.refresh, size: 16),
+                              label: const Text('Повторить попытку'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  else
+                    GestureDetector(
+                      onTap: () => setState(() => _showControls = !_showControls),
+                      child: ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.fromLTRB(24, 100, 24, 120),
+                      itemCount: paragraphs.length + 1,
+                      itemBuilder: (context, index) {
+                        if (index == 0) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 24),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  widget.novelTitle,
+                                  style: const TextStyle(
+                                    color: ShadcnColors.mutedForeground,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  activeChapter.title,
+                                  style: TextStyle(
+                                    color: settings.textColor,
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: -0.4,
+                                    fontFamily: settings.fontFamily,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                const Divider(color: ShadcnColors.border),
+                              ],
+                            ),
+                          );
+                        }
+
+                        final p = paragraphs[index - 1];
                         return Padding(
-                          padding: const EdgeInsets.only(bottom: 24),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                widget.novelTitle,
-                                style: const TextStyle(
-                                  color: ShadcnColors.mutedForeground,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                widget.chapter.title,
-                                style: TextStyle(
-                                  color: settings.textColor,
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: -0.4,
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              const Divider(color: ShadcnColors.border),
-                            ],
+                          padding: EdgeInsets.only(bottom: settings.fontSize * 0.8),
+                          child: Text(
+                            p,
+                            textAlign: settings.textAlign,
+                            style: TextStyle(
+                              color: settings.textColor,
+                              fontSize: settings.fontSize,
+                              height: settings.lineHeight,
+                              fontFamily: settings.fontFamily,
+                              letterSpacing: 0.1,
+                            ),
                           ),
                         );
-                      }
-
-                      final p = paragraphs[index - 1];
-                      return Padding(
-                        padding: EdgeInsets.only(bottom: settings.fontSize * 0.8),
-                        child: Text(
-                          p,
-                          textAlign: TextAlign.justify,
-                          style: TextStyle(
-                            color: settings.textColor,
-                            fontSize: settings.fontSize,
-                            height: settings.lineHeight,
-                            letterSpacing: 0.1,
-                          ),
-                        ),
-                      );
-                    },
+                      },
+                    ),
                   ),
-                ),
 
                 // Верхний матовый бар
                 AnimatedPositioned(
@@ -288,7 +645,7 @@ class _NovelReaderScreenState extends State<NovelReaderScreen> {
                             ),
                             Expanded(
                               child: Text(
-                                widget.chapter.title,
+                                activeChapter.title,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
                                   color: ShadcnColors.foreground,
@@ -296,29 +653,6 @@ class _NovelReaderScreenState extends State<NovelReaderScreen> {
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
-                            ),
-                            // Озвучка текста голосом (TTS)
-                            IconButton(
-                              icon: Icon(
-                                _isSpeaking ? Icons.volume_up : Icons.volume_up_outlined,
-                                color: _isSpeaking ? ShadcnColors.accent : ShadcnColors.foreground,
-                                size: 20,
-                              ),
-                              tooltip: 'Озвучить главу голосом (TTS)',
-                              onPressed: () {
-                                setState(() => _isSpeaking = !_isSpeaking);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      _isSpeaking
-                                          ? 'Голосовое чтение (TTS) запущено'
-                                          : 'Голосовое чтение приостановлено',
-                                    ),
-                                    duration: const Duration(seconds: 1),
-                                    backgroundColor: ShadcnColors.surface,
-                                  ),
-                                );
-                              },
                             ),
                             // Кнопка настроек шрифта
                             IconButton(
@@ -353,16 +687,26 @@ class _NovelReaderScreenState extends State<NovelReaderScreen> {
                           Row(
                             children: [
                               IconButton(
-                                icon: const Icon(Icons.chevron_left, color: ShadcnColors.foreground, size: 20),
-                                onPressed: () {},
+                                icon: Icon(
+                                  Icons.chevron_left,
+                                  color: hasPrev ? ShadcnColors.foreground : ShadcnColors.mutedForeground,
+                                  size: 20,
+                                ),
+                                tooltip: 'Предыдущая глава',
+                                onPressed: hasPrev ? () => _navigateToChapter(activeIndex - 1) : null,
                               ),
                               Text(
-                                'Глава ${widget.chapter.chapterNumber}',
+                                _formatChapterLabel(activeChapter),
                                 style: const TextStyle(color: ShadcnColors.foreground, fontSize: 12, fontWeight: FontWeight.w600),
                               ),
                               IconButton(
-                                icon: const Icon(Icons.chevron_right, color: ShadcnColors.foreground, size: 20),
-                                onPressed: () {},
+                                icon: Icon(
+                                  Icons.chevron_right,
+                                  color: hasNext ? ShadcnColors.foreground : ShadcnColors.mutedForeground,
+                                  size: 20,
+                                ),
+                                tooltip: 'Следующая глава',
+                                onPressed: hasNext ? () => _navigateToChapter(activeIndex + 1) : null,
                               ),
                             ],
                           ),
@@ -373,7 +717,9 @@ class _NovelReaderScreenState extends State<NovelReaderScreen> {
                 ),
               ],
             ),
-          );
+          ),
+        ),
+      );
         },
       ),
     );

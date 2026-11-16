@@ -32,7 +32,7 @@ class AppTheme {
         thickness: 1,
         space: 1,
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: ShadcnColors.card,
         elevation: 0,
         shape: RoundedRectangleBorder(

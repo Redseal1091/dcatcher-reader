@@ -23,6 +23,7 @@ class BookItem {
   final double rating;
   final List<BookChapter> chapters;
   final bool isFree;
+  final List<String> availableFormats;
 
   const BookItem({
     required this.id,
@@ -35,5 +36,10 @@ class BookItem {
     this.rating = 9.2,
     required this.chapters,
     this.isFree = true,
+    this.availableFormats = const [],
   });
+
+  bool get isPdfOnly =>
+      availableFormats.isNotEmpty &&
+      availableFormats.every((fmt) => fmt.toLowerCase() == 'application/pdf');
 }

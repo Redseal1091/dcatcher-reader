@@ -74,7 +74,13 @@ class LibraryProvider extends ChangeNotifier {
     return _items[mangaId]?.status;
   }
 
-  void setStatus(String mangaId, UserMangaStatus? status, {String? title, String? coverUrl}) {
+  void setStatus(
+    String mangaId,
+    UserMangaStatus? status, {
+    String? sourceId,
+    String? title,
+    String? coverUrl,
+  }) {
     if (status == null) {
       _items.remove(mangaId);
     } else {
@@ -82,12 +88,14 @@ class LibraryProvider extends ChangeNotifier {
       if (existing != null) {
         _items[mangaId] = existing.copyWith(
           status: status,
+          sourceId: sourceId ?? (mangaId.contains('::') ? mangaId.split('::').first : ''),
           title: title ?? existing.title,
           coverUrl: coverUrl ?? existing.coverUrl,
           updatedAt: DateTime.now(),
         );
       } else {
         _items[mangaId] = LibraryItem(
+          sourceId: sourceId ?? (mangaId.contains('::') ? mangaId.split('::').first : ''),
           mangaId: mangaId,
           status: status,
           title: title,
@@ -106,12 +114,14 @@ class LibraryProvider extends ChangeNotifier {
     required String chapterId,
     required String chapterNumber,
     int page = 1,
+    String? sourceId,
     String? title,
     String? coverUrl,
   }) {
     final existing = _items[mangaId];
     if (existing != null) {
       _items[mangaId] = existing.copyWith(
+        sourceId: sourceId ?? (mangaId.contains('::') ? mangaId.split('::').first : ''),
         lastChapterId: chapterId,
         lastChapterNumber: chapterNumber,
         lastPage: page,
@@ -124,6 +134,7 @@ class LibraryProvider extends ChangeNotifier {
       _items[mangaId] = LibraryItem(
         mangaId: mangaId,
         status: UserMangaStatus.reading,
+        sourceId: sourceId ?? (mangaId.contains('::') ? mangaId.split('::').first : ''),
         lastChapterId: chapterId,
         lastChapterNumber: chapterNumber,
         lastPage: page,

@@ -12,12 +12,14 @@ class ReaderSettings extends ChangeNotifier {
   double _fontSize = 17.0;
   double _lineHeight = 1.6;
   NovelReaderTheme _theme = NovelReaderTheme.zincDark;
-  final String _fontFamily = 'Roboto';
+  String _fontFamily = 'Roboto';
+  TextAlign _textAlign = TextAlign.justify;
 
   double get fontSize => _fontSize;
   double get lineHeight => _lineHeight;
   NovelReaderTheme get theme => _theme;
   String get fontFamily => _fontFamily;
+  TextAlign get textAlign => _textAlign;
 
   ReaderSettings() {
     _load();
@@ -29,6 +31,9 @@ class ReaderSettings extends ChangeNotifier {
     _lineHeight = prefs.getDouble('reader_line_height') ?? 1.6;
     final themeIdx = prefs.getInt('reader_theme_idx') ?? 1;
     _theme = NovelReaderTheme.values[themeIdx % NovelReaderTheme.values.length];
+    _fontFamily = prefs.getString('reader_font_family') ?? 'Roboto';
+    final alignStr = prefs.getString('reader_text_align') ?? 'justify';
+    _textAlign = alignStr == 'start' ? TextAlign.start : TextAlign.justify;
     notifyListeners();
   }
 
@@ -37,6 +42,8 @@ class ReaderSettings extends ChangeNotifier {
     await prefs.setDouble('reader_font_size', _fontSize);
     await prefs.setDouble('reader_line_height', _lineHeight);
     await prefs.setInt('reader_theme_idx', _theme.index);
+    await prefs.setString('reader_font_family', _fontFamily);
+    await prefs.setString('reader_text_align', _textAlign == TextAlign.start ? 'start' : 'justify');
   }
 
   void setFontSize(double size) {
@@ -53,6 +60,18 @@ class ReaderSettings extends ChangeNotifier {
 
   void setTheme(NovelReaderTheme newTheme) {
     _theme = newTheme;
+    _save();
+    notifyListeners();
+  }
+
+  void setFontFamily(String family) {
+    _fontFamily = family;
+    _save();
+    notifyListeners();
+  }
+
+  void setTextAlign(TextAlign align) {
+    _textAlign = align;
     _save();
     notifyListeners();
   }

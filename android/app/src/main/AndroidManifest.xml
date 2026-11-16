@@ -6,11 +6,21 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!--
+        Enforce TLS-only platform traffic (android:usesCleartextTraffic="false").
+        Important: Android's WebViewClient.shouldInterceptRequest only intercepts initial requests,
+        not internal server redirect chains (such as 307 redirects from HTTPS to HTTP). Furthermore,
+        shouldOverrideUrlLoading does not intercept POST requests, meaning an HTTPS request redirecting
+        to HTTP could otherwise leak credentials if cleartext traffic were allowed at the platform level.
+        HTTPS login cannot be guaranteed with global cleartext traffic enabled.
+        Known compatibility impact: HTTP-only manga sources are unsupported and must be reported
+        by the source manager as incompatible.
+    -->
     <application
         android:label="DCatcher"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="false">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -28,6 +38,20 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".SourceLoginActivity"
+            android:exported="false"
+            android:theme="@style/Theme.SourceAccess"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".SourceSettingsActivity"
+            android:exported="false"
+            android:theme="@style/Theme.SourceAccess"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode" />
+
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

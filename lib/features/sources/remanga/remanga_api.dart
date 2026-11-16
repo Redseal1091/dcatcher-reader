@@ -6,7 +6,7 @@ import '../../catalog/models/manga.dart';
 import '../../catalog/models/catalog_filters.dart';
 import '../../reader/models/chapter.dart';
 
-class RemangaSource implements MangaSource {
+class RemangaSource extends MangaSource {
   @override
   String get name => 'Remanga';
 
@@ -258,5 +258,12 @@ class RemangaSource implements MangaSource {
       }
     } catch (_) {}
     return 'Описание недоступно.';
+  }
+
+  @override
+  Future<Map<String, String>> getHeaders() async => defaultHeaders;
+
+  @override
+  Future<Uint8List?> fetchImage(String url) async { return null;
   }
 }

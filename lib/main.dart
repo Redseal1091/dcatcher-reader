@@ -6,11 +6,19 @@ import 'core/theme/theme_provider.dart';
 import 'core/widgets/frosted_glass.dart';
 import 'features/catalog/state/catalog_provider.dart';
 import 'features/library/state/library_provider.dart';
+import 'features/library/state/book_shelf_provider.dart';
+import 'features/reader/models/manga_reader_settings.dart';
 import 'features/catalog/screens/catalog_screen.dart';
 import 'features/library/screens/library_screen.dart';
+import 'features/sources/source_manager.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await SourceManager.initialize();
+  } catch (e) {
+    debugPrint('SourceManager startup initialization error: $e');
+  }
   // Увеличиваем лимиты кэша изображений в памяти для мгновенного перелистывания страниц без задержек
   PaintingBinding.instance.imageCache.maximumSizeBytes = 256 * 1024 * 1024; // 256 MB
   PaintingBinding.instance.imageCache.maximumSize = 300;
@@ -34,7 +42,9 @@ class MangaAppRoot extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AppSettingsProvider()),
+        ChangeNotifierProvider(create: (_) => MangaReaderSettings()),
         ChangeNotifierProvider(create: (_) => LibraryProvider()),
+        ChangeNotifierProvider(create: (_) => BookShelfProvider()),
         ChangeNotifierProxyProvider<LibraryProvider, CatalogProvider>(
           create: (_) => CatalogProvider(),
           update: (_, library, catalog) {

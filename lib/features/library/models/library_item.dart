@@ -1,3 +1,5 @@
+import '../../catalog/models/manga.dart';
+
 enum UserMangaStatus {
   reading,    // Читаю
   completed,  // Прочитано
@@ -7,6 +9,7 @@ enum UserMangaStatus {
 
 class LibraryItem {
   final String mangaId;
+  final String sourceId;
   final UserMangaStatus status;
   final String lastChapterId;
   final String lastChapterNumber;
@@ -17,6 +20,7 @@ class LibraryItem {
 
   const LibraryItem({
     required this.mangaId,
+    this.sourceId = '',
     required this.status,
     this.lastChapterId = '',
     this.lastChapterNumber = '',
@@ -28,6 +32,7 @@ class LibraryItem {
 
   Map<String, dynamic> toJson() => {
     'mangaId': mangaId,
+    'sourceId': sourceId,
     'status': status.name,
     'lastChapterId': lastChapterId,
     'lastChapterNumber': lastChapterNumber,
@@ -37,21 +42,31 @@ class LibraryItem {
     'updatedAt': updatedAt.toIso8601String(),
   };
 
-  factory LibraryItem.fromJson(Map<String, dynamic> json) => LibraryItem(
-    mangaId: json['mangaId'] as String,
-    status: UserMangaStatus.values.firstWhere(
-      (s) => s.name == json['status'],
-      orElse: () => UserMangaStatus.reading,
-    ),
-    lastChapterId: json['lastChapterId'] as String? ?? '',
-    lastChapterNumber: json['lastChapterNumber'] as String? ?? '',
-    lastPage: json['lastPage'] as int? ?? 1,
-    title: json['title'] as String?,
-    coverUrl: json['coverUrl'] as String?,
-    updatedAt: DateTime.tryParse(json['updatedAt'] ?? '') ?? DateTime.now(),
-  );
+  factory LibraryItem.fromJson(Map<String, dynamic> json) {
+    final mangaId = json['mangaId'] as String? ?? '';
+    String sourceId = json['sourceId'] as String? ?? '';
+    if (sourceId.isEmpty && mangaId.contains('::')) {
+      sourceId = mangaId.split('::').first;
+    }
+
+    return LibraryItem(
+      mangaId: mangaId,
+      sourceId: sourceId,
+      status: UserMangaStatus.values.firstWhere(
+        (s) => s.name == json['status'],
+        orElse: () => UserMangaStatus.reading,
+      ),
+      lastChapterId: json['lastChapterId'] as String? ?? '',
+      lastChapterNumber: json['lastChapterNumber'] as String? ?? '',
+      lastPage: json['lastPage'] as int? ?? 1,
+      title: json['title'] as String?,
+      coverUrl: json['coverUrl'] as String?,
+      updatedAt: DateTime.tryParse(json['updatedAt'] ?? '') ?? DateTime.now(),
+    );
+  }
 
   LibraryItem copyWith({
+    String? sourceId,
     UserMangaStatus? status,
     String? lastChapterId,
     String? lastChapterNumber,
@@ -62,6 +77,7 @@ class LibraryItem {
   }) {
     return LibraryItem(
       mangaId: mangaId,
+      sourceId: sourceId ?? this.sourceId,
       status: status ?? this.status,
       lastChapterId: lastChapterId ?? this.lastChapterId,
       lastChapterNumber: lastChapterNumber ?? this.lastChapterNumber,
@@ -69,6 +85,18 @@ class LibraryItem {
       title: title ?? this.title,
       coverUrl: coverUrl ?? this.coverUrl,
       updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
+  Manga toManga() {
+    return Manga(
+      id: mangaId,
+      title: title ?? 'Без названия',
+      description: '',
+      coverUrl: coverUrl ?? '',
+      type: PublicationType.all,
+      contentRating: ContentRating.safe,
+      sourceId: sourceId,
     );
   }
 }

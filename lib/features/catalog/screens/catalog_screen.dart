@@ -12,9 +12,12 @@ import 'widgets/filter_bottom_sheet.dart';
 import 'manga_detail_screen.dart';
 import '../../sources/manga_source.dart';
 import '../../sources/source_manager.dart';
+import '../../sources/extension_manga_source.dart';
 import '../../books/screens/books_catalog_screen.dart';
 import '../../novel_reader/screens/ranobe_catalog_screen.dart';
 import '../../settings/screens/settings_screen.dart';
+import '../../extensions/screens/extensions_screen.dart';
+import '../../extensions/widgets/source_access_actions.dart';
 
 enum CatalogSection {
   manhwa, // Корея
@@ -33,16 +36,40 @@ class CatalogScreen extends StatefulWidget {
 
 class _CatalogScreenState extends State<CatalogScreen> {
   final TextEditingController _searchCtrl = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   CatalogSection _activeSection = CatalogSection.manhwa;
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        _switchSection(_activeSection);
+        _switchSection(_activeSection, isInitial: true);
       }
     });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final maxScroll = _scrollController.position.maxScrollExtent;
+    final currentScroll = _scrollController.position.pixels;
+    // When user scrolls within 300px from the bottom, load more items
+    if (maxScroll - currentScroll <= 300) {
+      final catalog = context.read<CatalogProvider>();
+      final library = context.read<LibraryProvider>();
+      if (!catalog.isLoading && !catalog.isLoadingMore && catalog.hasNextPage && catalog.loadMoreError == null) {
+        catalog.loadMore(libraryProvider: library);
+      }
+    }
   }
 
   String get _currentSectionLabel {
@@ -60,22 +87,46 @@ class _CatalogScreenState extends State<CatalogScreen> {
     }
   }
 
-  void _switchSection(CatalogSection section) {
+  void _switchSection(CatalogSection section, {bool isInitial = false}) {
     setState(() => _activeSection = section);
+    if (section == CatalogSection.books || section == CatalogSection.ranobe) {
+      return;
+    }
+
     final catalog = context.read<CatalogProvider>();
     final library = context.read<LibraryProvider>();
     final settings = context.read<AppSettingsProvider>();
 
+    final selectedSettingSource = switch (section) {
+      CatalogSection.manhwa => SourceManager.getSourceById(settings.manhwaSource),
+      CatalogSection.manhua => SourceManager.getSourceById(settings.manhuaSource),
+      CatalogSection.manga => SourceManager.getSourceById(settings.mangaSource),
+      _ => null,
+    };
+
+    final selectedSource = isInitial
+        ? (selectedSettingSource ??
+            SourceManager.currentSource ??
+            (SourceManager.sources.isNotEmpty ? SourceManager.sources.first : null))
+        : (catalog.source ??
+            selectedSettingSource ??
+            SourceManager.currentSource ??
+            (SourceManager.sources.isNotEmpty ? SourceManager.sources.first : null));
+
     if (section == CatalogSection.manhwa) {
       catalog.filters.publicationTypes = {PublicationType.manhwa};
-      catalog.switchSource(SourceManager.getSourceById(settings.manhwaSource), libraryProvider: library);
     } else if (section == CatalogSection.manhua) {
       catalog.filters.publicationTypes = {PublicationType.manhua};
-      catalog.switchSource(SourceManager.getSourceById(settings.manhuaSource), libraryProvider: library);
     } else if (section == CatalogSection.manga) {
       catalog.filters.publicationTypes = {PublicationType.manga};
-      catalog.switchSource(SourceManager.getSourceById(settings.mangaSource), libraryProvider: library);
     }
+
+    if (isInitial && selectedSource?.id == catalog.source?.id) {
+      catalog.applyLocalFilters(library);
+      return;
+    }
+
+    catalog.switchSource(selectedSource, libraryProvider: library);
   }
 
   void _openMainMenu(BuildContext context) {
@@ -186,6 +237,17 @@ class _CatalogScreenState extends State<CatalogScreen> {
               ),
               const Divider(color: ShadcnColors.border),
               _buildMenuItem(
+                icon: Icons.extension,
+                color: const Color(0xFFEC4899),
+                title: 'Расширения Keiyoushi',
+                subtitle: 'Управление плагинами и источниками каталогов',
+                isSelected: false,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const ExtensionsScreen()));
+                },
+              ),
+              _buildMenuItem(
                 icon: Icons.settings,
                 color: ShadcnColors.foreground,
                 title: 'Настройки DCatcher',
@@ -286,48 +348,67 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   const SizedBox(width: 10),
 
                   // Горизонтальный логотип DCatcher с отсылкой к Паприке
-                  InkWell(
-                    onTap: () => _openMainMenu(context),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(5),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFE11D48),
-                            borderRadius: BorderRadius.circular(7),
-                          ),
-                          child: const Icon(Icons.psychology_alt_rounded, color: Colors.white, size: 16),
-                        ),
-                        const SizedBox(width: 8),
-                        const Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
+                  Expanded(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: InkWell(
+                        onTap: () => _openMainMenu(context),
+                        child: Row(
                           children: [
-                            Text(
-                              'DCatcher',
-                              style: TextStyle(
-                                color: ShadcnColors.foreground,
-                                fontSize: 17,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: -0.4,
+                            Container(
+                              padding: const EdgeInsets.all(5),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE11D48),
+                                borderRadius: BorderRadius.circular(7),
                               ),
+                              child: const Icon(Icons.psychology_alt_rounded, color: Colors.white, size: 16),
                             ),
-                            Text(
-                              'PAPRIKA • DC MINI',
-                              style: TextStyle(
-                                color: Color(0xFFE11D48),
-                                fontSize: 7.5,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 0.8,
-                              ),
+                            const SizedBox(width: 8),
+                            const Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'DCatcher',
+                                  style: TextStyle(
+                                    color: ShadcnColors.foreground,
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: -0.4,
+                                  ),
+                                ),
+                                Text(
+                                  'PAPRIKA • DC MINI',
+                                  style: TextStyle(
+                                    color: Color(0xFFE11D48),
+                                    fontSize: 7.5,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 0.8,
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
 
-                  const Spacer(),
+                  const SizedBox(width: 8),
+
+                  // Кнопка перехода к расширениям Keiyoushi
+                  IconButton(
+                    icon: const Icon(Icons.extension_outlined, color: ShadcnColors.foreground, size: 20),
+                    tooltip: 'Расширения Keiyoushi',
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ExtensionsScreen()),
+                      );
+                    },
+                  ),
+                  const SizedBox(width: 4),
 
                   // Селектор текущего каталога
                   InkWell(
@@ -373,71 +454,125 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 child: Row(
                   children: [
                     // Селектор источника
-                    PopupMenuButton<MangaSource>(
-                      initialValue: catalog.source,
-                      tooltip: 'Сменить источник каталога',
-                      onSelected: (newSource) {
-                        final settings = context.read<AppSettingsProvider>();
-                        if (_activeSection == CatalogSection.manhwa) {
-                          settings.setSource('manhwa', newSource.name);
-                        } else if (_activeSection == CatalogSection.manhua) {
-                          settings.setSource('manhua', newSource.name);
-                        } else if (_activeSection == CatalogSection.manga) {
-                          settings.setSource('manga', newSource.name);
-                        }
-                        catalog.switchSource(newSource, libraryProvider: library);
-                      },
-                      itemBuilder: (ctx) => SourceManager.sources
-                          .map((s) => PopupMenuItem<MangaSource>(
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 160),
+                      child: PopupMenuButton<MangaSource>(
+                        initialValue: catalog.source,
+                        tooltip: 'Сменить источник каталога',
+                        onSelected: (newSource) {
+                          final settings = context.read<AppSettingsProvider>();
+                          if (_activeSection == CatalogSection.manhwa) {
+                            settings.setSource('manhwa', newSource.id);
+                          } else if (_activeSection == CatalogSection.manhua) {
+                            settings.setSource('manhua', newSource.id);
+                          } else if (_activeSection == CatalogSection.manga) {
+                            settings.setSource('manga', newSource.id);
+                          }
+                          catalog.switchSource(newSource, libraryProvider: library);
+                        },
+                        itemBuilder: (ctx) => SourceManager.sources
+                            .map((s) {
+                              final lang = s.language.isNotEmpty
+                                  ? s.language.toUpperCase()
+                                  : null;
+                              final isSelected = s.id == catalog.source?.id;
+                              return PopupMenuItem<MangaSource>(
                                 value: s,
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      s.id == 'asura'
-                                          ? Icons.bolt
-                                          : s.id == 'mangalib'
-                                              ? Icons.menu_book
-                                              : s.id == 'mangabuff'
-                                                  ? Icons.bubble_chart
-                                                  : Icons.auto_stories,
-                                      size: 16,
-                                      color: s.id == catalog.source.id ? ShadcnColors.primary : ShadcnColors.mutedForeground,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      s.name,
-                                      style: TextStyle(
-                                        color: s.id == catalog.source.id ? ShadcnColors.primary : ShadcnColors.foreground,
-                                        fontWeight: s.id == catalog.source.id ? FontWeight.bold : FontWeight.normal,
-                                        fontSize: 13,
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(maxWidth: 256),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        s.id == 'asura'
+                                            ? Icons.bolt
+                                            : s.id == 'mangalib'
+                                                ? Icons.menu_book
+                                                : s.id == 'mangabuff'
+                                                    ? Icons.bubble_chart
+                                                    : Icons.auto_stories,
+                                        size: 16,
+                                        color: isSelected ? ShadcnColors.primary : ShadcnColors.mutedForeground,
                                       ),
-                                    ),
-                                  ],
+                                      const SizedBox(width: 8),
+                                      Flexible(
+                                        child: Text(
+                                          s.name,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            color: isSelected ? ShadcnColors.primary : ShadcnColors.foreground,
+                                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      ),
+                                      if (lang != null) ...[
+                                        const SizedBox(width: 6),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                          decoration: BoxDecoration(
+                                            color: isSelected
+                                                ? ShadcnColors.primary.withValues(alpha: 0.15)
+                                                : ShadcnColors.border.withValues(alpha: 0.5),
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: Text(
+                                            lang,
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w700,
+                                              color: isSelected ? ShadcnColors.primary : ShadcnColors.mutedForeground,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
                                 ),
-                              ))
-                          .toList(),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: ShadcnColors.surface,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: ShadcnColors.border),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.hub_outlined, color: ShadcnColors.primary, size: 15),
-                            const SizedBox(width: 5),
-                            Text(
-                              catalog.source.name,
-                              style: const TextStyle(color: ShadcnColors.foreground, fontSize: 12, fontWeight: FontWeight.w700),
-                            ),
-                            const SizedBox(width: 2),
-                            const Icon(Icons.arrow_drop_down, color: ShadcnColors.mutedForeground, size: 16),
-                          ],
+                              );
+                            })
+                            .toList(),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: ShadcnColors.surface,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: ShadcnColors.border),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.hub_outlined, color: ShadcnColors.primary, size: 15),
+                              const SizedBox(width: 5),
+                              Flexible(
+                                child: Text(
+                                  catalog.source == null
+                                      ? 'Нет источников'
+                                      : (catalog.source is ExtensionMangaSource &&
+                                              (catalog.source as ExtensionMangaSource).language.isNotEmpty)
+                                          ? '${catalog.source!.name} [${(catalog.source as ExtensionMangaSource).language.toUpperCase()}]'
+                                          : catalog.source!.name,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(color: ShadcnColors.foreground, fontSize: 12, fontWeight: FontWeight.w700),
+                                ),
+                              ),
+                              const SizedBox(width: 2),
+                              const Icon(Icons.arrow_drop_down, color: ShadcnColors.mutedForeground, size: 16),
+                            ],
+                          ),
                         ),
                       ),
                     ),
+                    if (catalog.source != null) ...[
+                      const SizedBox(width: 6),
+                      SourceAccessActions(
+                        sourceId: catalog.source!.id,
+                        sourceName: catalog.source!.name,
+                        iconSize: 16,
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 8),
+                        onChanged: () => catalog.loadCatalog(libraryProvider: library),
+                      ),
+                    ],
                     const SizedBox(width: 8),
 
                     Expanded(
@@ -612,40 +747,113 @@ class _CatalogScreenState extends State<CatalogScreen> {
                           strokeWidth: 2,
                         ),
                       )
-                    : catalog.mangaList.isEmpty
-                        ? _buildEmptyState(catalog, library)
-                        : RefreshIndicator(
-                            color: ShadcnColors.foreground,
-                            backgroundColor: ShadcnColors.card,
-                            onRefresh: () => catalog.loadCatalog(libraryProvider: library),
-                            child: GridView.builder(
-                              padding: const EdgeInsets.fromLTRB(16, 4, 16, 80),
-                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 2,
-                                childAspectRatio: 0.65,
-                                crossAxisSpacing: 12,
-                                mainAxisSpacing: 12,
-                              ),
-                              itemCount: catalog.mangaList.length,
-                              itemBuilder: (context, index) {
-                                final manga = catalog.mangaList[index];
-                                final status = library.getStatus(manga.id);
+                    : (catalog.errorMessage != null && catalog.errorMessage!.isNotEmpty)
+                        ? CatalogErrorView(
+                            errorMessage: catalog.errorMessage!,
+                            onRetry: () => catalog.loadCatalog(libraryProvider: library),
+                          )
+                        : catalog.mangaList.isEmpty
+                            ? _buildEmptyState(catalog, library)
+                            : RefreshIndicator(
+                                color: ShadcnColors.foreground,
+                                backgroundColor: ShadcnColors.card,
+                                onRefresh: () => catalog.loadCatalog(libraryProvider: library),
+                                child: CustomScrollView(
+                                  controller: _scrollController,
+                                  physics: const AlwaysScrollableScrollPhysics(),
+                                  slivers: [
+                                    SliverPadding(
+                                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 80),
+                                      sliver: SliverGrid(
+                                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                          crossAxisCount: 2,
+                                          childAspectRatio: 0.65,
+                                          crossAxisSpacing: 12,
+                                          mainAxisSpacing: 12,
+                                        ),
+                                        delegate: SliverChildBuilderDelegate(
+                                          (context, index) {
+                                            final manga = catalog.mangaList[index];
+                                            final status = library.getStatus(manga.id);
 
-                                return MangaCard(
-                                  manga: manga,
-                                  libraryStatus: status,
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => MangaDetailScreen(manga: manga),
+                                            return MangaCard(
+                                              manga: manga,
+                                              libraryStatus: status,
+                                              onTap: () {
+                                                Navigator.push(
+                                                  context,
+                                                  MaterialPageRoute(
+                                                    builder: (_) => MangaDetailScreen(manga: manga),
+                                                  ),
+                                                );
+                                              },
+                                            );
+                                          },
+                                          childCount: catalog.mangaList.length,
+                                        ),
                                       ),
-                                    );
-                                  },
-                                );
-                              },
-                            ),
-                          ),
+                                    ),
+                                    if (catalog.isLoadingMore)
+                                      const SliverToBoxAdapter(
+                                        child: Padding(
+                                          padding: EdgeInsets.symmetric(vertical: 24),
+                                          child: Center(
+                                            child: CircularProgressIndicator(
+                                              color: ShadcnColors.primary,
+                                              strokeWidth: 2,
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                    else if (catalog.loadMoreError != null)
+                                      SliverToBoxAdapter(
+                                        child: Padding(
+                                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                                          child: Center(
+                                            child: Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text(
+                                                  'Не удалось загрузить следующие элементы: ${catalog.loadMoreError}',
+                                                  textAlign: TextAlign.center,
+                                                  style: const TextStyle(
+                                                    color: ShadcnColors.mutedForeground,
+                                                    fontSize: 12,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 8),
+                                                ShadcnButton(
+                                                  text: 'Загрузить ещё',
+                                                  icon: Icons.refresh_rounded,
+                                                  variant: ButtonVariant.outline,
+                                                  onPressed: () => catalog.loadMore(libraryProvider: library),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                    else if (catalog.hasNextPage)
+                                      SliverToBoxAdapter(
+                                        child: Padding(
+                                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+                                          child: Center(
+                                            child: ShadcnButton(
+                                              text: 'Загрузить ещё',
+                                              icon: Icons.expand_more_rounded,
+                                              variant: ButtonVariant.ghost,
+                                              onPressed: () => catalog.loadMore(libraryProvider: library),
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                    else
+                                      const SliverToBoxAdapter(
+                                        child: SizedBox(height: 60),
+                                      ),
+                                  ],
+                                ),
+                              ),
               ),
             ],
           ],
@@ -687,6 +895,56 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   Widget _buildEmptyState(CatalogProvider catalog, LibraryProvider library) {
+    if (catalog.source == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: ShadcnColors.card,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: ShadcnColors.border),
+                ),
+                child: const Icon(Icons.extension_off_outlined, size: 36, color: ShadcnColors.mutedForeground),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Нет установленных источников',
+                style: TextStyle(
+                  color: ShadcnColors.foreground,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Установите расширение каталога из репозитория Keiyoushi для загрузки тайтлов.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: ShadcnColors.mutedForeground,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 16),
+              ShadcnButton(
+                text: 'Управление расширениями',
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ExtensionsScreen()),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     final hasExclusions = catalog.filters.readingStatus == FilterTriState.exclude ||
         catalog.filters.completedStatus == FilterTriState.exclude;
 
@@ -733,6 +991,112 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 catalog.filters.reset();
                 catalog.loadCatalog(libraryProvider: library);
               },
+            ),
+            if (catalog.isLoadingMore) ...[
+              const SizedBox(height: 16),
+              const CircularProgressIndicator(
+                color: ShadcnColors.primary,
+                strokeWidth: 2,
+              ),
+            ] else if (catalog.loadMoreError != null) ...[
+              const SizedBox(height: 16),
+              Text(
+                'Не удалось загрузить следующие элементы: ${catalog.loadMoreError}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: ShadcnColors.mutedForeground,
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ShadcnButton(
+                text: 'Загрузить ещё',
+                icon: Icons.refresh_rounded,
+                variant: ButtonVariant.outline,
+                onPressed: () => catalog.loadMore(libraryProvider: library),
+              ),
+            ] else if (catalog.hasNextPage) ...[
+              const SizedBox(height: 16),
+              ShadcnButton(
+                text: 'Загрузить ещё',
+                icon: Icons.expand_more_rounded,
+                variant: ButtonVariant.ghost,
+                onPressed: () => catalog.loadMore(libraryProvider: library),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class CatalogErrorView extends StatelessWidget {
+  final String errorMessage;
+  final VoidCallback onRetry;
+
+  const CatalogErrorView({
+    super.key,
+    required this.errorMessage,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: ShadcnColors.card,
+                shape: BoxShape.circle,
+                border: Border.all(color: ShadcnColors.border),
+              ),
+              child: const Icon(
+                Icons.error_outline_rounded,
+                size: 36,
+                color: ShadcnColors.exclude,
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Ошибка загрузки каталога',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: ShadcnColors.foreground,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              constraints: const BoxConstraints(maxWidth: 420),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: ShadcnColors.card,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: ShadcnColors.border),
+              ),
+              child: Text(
+                errorMessage,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: ShadcnColors.mutedForeground,
+                  fontSize: 12,
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            ShadcnButton(
+              text: 'Повторить попытку',
+              icon: Icons.refresh_rounded,
+              variant: ButtonVariant.primary,
+              onPressed: onRetry,
             ),
           ],
         ),

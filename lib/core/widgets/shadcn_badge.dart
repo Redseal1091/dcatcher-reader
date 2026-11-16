@@ -16,12 +16,14 @@ class ShadcnBadge extends StatelessWidget {
   final String label;
   final BadgeVariant variant;
   final IconData? icon;
+  final bool flexibleLabel;
 
   const ShadcnBadge({
     super.key,
     required this.label,
     this.variant = BadgeVariant.defaultVariant,
     this.icon,
+    this.flexibleLabel = false,
   });
 
   @override
@@ -73,6 +75,18 @@ class ShadcnBadge extends StatelessWidget {
         break;
     }
 
+    final textWidget = Text(
+      label,
+      maxLines: flexibleLabel ? 2 : null,
+      overflow: flexibleLabel ? TextOverflow.ellipsis : null,
+      style: TextStyle(
+        color: text,
+        fontSize: 11,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.1,
+      ),
+    );
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
@@ -87,15 +101,10 @@ class ShadcnBadge extends StatelessWidget {
             Icon(icon, size: 11, color: text),
             const SizedBox(width: 4),
           ],
-          Text(
-            label,
-            style: TextStyle(
-              color: text,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.1,
-            ),
-          ),
+          if (flexibleLabel)
+            Flexible(child: textWidget)
+          else
+            textWidget,
         ],
       ),
     );

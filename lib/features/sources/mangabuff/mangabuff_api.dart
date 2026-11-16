@@ -5,7 +5,7 @@ import '../../catalog/models/manga.dart';
 import '../../catalog/models/catalog_filters.dart';
 import '../../reader/models/chapter.dart';
 
-class MangaBuffSource implements MangaSource {
+class MangaBuffSource extends MangaSource {
   @override
   String get name => 'MangaBuff';
 
@@ -413,5 +413,12 @@ class MangaBuffSource implements MangaSource {
 
     final found = _fallbackCatalog.where((x) => x.id == mangaId);
     return found.isNotEmpty ? found.first.description : 'Описание тайтла на MangaBuff';
+  }
+
+  @override
+  Future<Map<String, String>> getHeaders() async => _headers;
+
+  @override
+  Future<Uint8List?> fetchImage(String url) async { return null;
   }
 }
