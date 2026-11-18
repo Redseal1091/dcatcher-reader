@@ -30,8 +30,27 @@ class MangaDexSource extends MangaSource {
         'limit': '$limit',
         'offset': '$offset',
         'includes[]': 'cover_art',
-        'order[followedCount]': 'desc',
       };
+
+      switch (filters.ordering) {
+        case '-id':
+          queryParams['order[createdAt]'] = 'desc';
+          break;
+        case '-count_chapters':
+          queryParams['order[latestUploadedChapter]'] = 'desc';
+          break;
+        case '-total_views':
+          queryParams['order[followedCount]'] = 'desc';
+          break;
+        case '-rating':
+        default:
+          queryParams['order[rating]'] = 'desc';
+          break;
+      }
+
+      if (filters.statusFilter != null) {
+        queryParams['status[]'] = filters.statusFilter!;
+      }
 
       if (filters.searchQuery.trim().isNotEmpty) {
         queryParams['title'] = filters.searchQuery.trim();

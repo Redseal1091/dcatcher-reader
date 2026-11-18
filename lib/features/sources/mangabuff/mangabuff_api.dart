@@ -224,7 +224,22 @@ class MangaBuffSource extends MangaSource {
         final q = Uri.encodeComponent(filters.searchQuery.trim());
         uri = Uri.parse('$siteUrl/manga?search=$q&page=$page');
       } else {
-        uri = Uri.parse('$siteUrl/manga?page=$page');
+        final params = <String>['page=$page'];
+        final sortParam = switch (filters.ordering) {
+          '-id' => 'created_at',
+          '-total_views' => 'real_views',
+          '-rating' => 'rating',
+          _ => 'real_views',
+        };
+        params.add('sort=$sortParam');
+        if (filters.statusFilter == 'completed') {
+          params.add('status_id[]=1');
+        } else if (filters.statusFilter == 'ongoing') {
+          params.add('status_id[]=2');
+        } else if (filters.statusFilter == 'hiatus') {
+          params.add('status_id[]=3');
+        }
+        uri = Uri.parse('$siteUrl/manga?${params.join('&')}');
       }
 
       final res = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 7));
@@ -244,7 +259,10 @@ class MangaBuffSource extends MangaSource {
     }
 
     // Возвращаем богатый встроенный каталог MangaBuff
-    return _fallbackCatalog.where((m) => _matchesFilters(m, filters)).toList();
+    return MangaSource.applyLocalOrderingAndStatus(
+      _fallbackCatalog.where((m) => _matchesFilters(m, filters)).toList(),
+      filters,
+    );
   }
 
   bool _matchesFilters(Manga m, CatalogFilters filters) {

@@ -28,7 +28,7 @@ class ExtensionCatalogItem {
   });
 
   static String parseStatus(dynamic rawStatus) {
-    if (rawStatus == null) return 'ongoing';
+    if (rawStatus == null) return 'unknown';
     final str = rawStatus.toString().trim().toLowerCase();
 
     switch (str) {
@@ -42,7 +42,9 @@ class ExtensionCatalogItem {
         return 'hiatus';
       case '0':
       case '3':
-        return 'ongoing';
+      case 'unknown':
+      case '':
+        return 'unknown';
     }
 
     if (str.contains('complete') || str.contains('закончен') || str.contains('завершен')) {
@@ -51,7 +53,10 @@ class ExtensionCatalogItem {
     if (str.contains('hiatus') || str.contains('заморожен') || str.contains('приостановлен') || str.contains('cancel')) {
       return 'hiatus';
     }
-    return 'ongoing';
+    if (str.contains('ongoing') || str.contains('онгоинг') || str.contains('продолж') || str.contains('выход')) {
+      return 'ongoing';
+    }
+    return 'unknown';
   }
 
   factory ExtensionCatalogItem.fromJson(Map<String, dynamic> json) {

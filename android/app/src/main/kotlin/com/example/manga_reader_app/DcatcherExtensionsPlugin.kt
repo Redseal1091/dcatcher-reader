@@ -222,6 +222,8 @@ class DcatcherExtensionsPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
                 }.coerceAtLeast(1)
                 val query = call.argument<String>("query")
                 val type = call.argument<String>("type")
+                val ordering = call.argument<String>("ordering")
+                val status = call.argument<String>("status")
                 val includedGenres = call.argument<List<String>>("includedGenres")
                 val excludedGenres = call.argument<List<String>>("excludedGenres")
 
@@ -235,7 +237,16 @@ class DcatcherExtensionsPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
                         awaitStartupReady()
                         val catalog = extensionManager.withLifecycleLock {
                             val source = extensionManager.getSource(sourceId)
-                            SourceOperations.getCatalog(source, page, query, type, includedGenres, excludedGenres)
+                            SourceOperations.getCatalog(
+                                source = source,
+                                page = page,
+                                query = query,
+                                type = type,
+                                ordering = ordering,
+                                status = status,
+                                includedGenres = includedGenres,
+                                excludedGenres = excludedGenres
+                            )
                         }
                         postSuccess(result, catalog)
                     } catch (e: CancellationException) {

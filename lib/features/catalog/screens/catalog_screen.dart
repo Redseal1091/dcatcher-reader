@@ -677,10 +677,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   children: [
                     _buildQuickChip(
                       label: '🔥 Популярное',
-                      isSelected: catalog.filters.ordering == '-rating' && catalog.filters.statusFilter == null,
+                      isSelected: catalog.filters.ordering == '-rating',
                       onTap: () {
                         catalog.filters.ordering = '-rating';
-                        catalog.filters.statusFilter = null;
                         catalog.loadCatalog(libraryProvider: library);
                       },
                     ),
@@ -690,7 +689,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       isSelected: catalog.filters.ordering == '-id',
                       onTap: () {
                         catalog.filters.ordering = '-id';
-                        catalog.filters.statusFilter = null;
                         catalog.loadCatalog(libraryProvider: library);
                       },
                     ),
@@ -700,7 +698,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       isSelected: catalog.filters.ordering == '-count_chapters',
                       onTap: () {
                         catalog.filters.ordering = '-count_chapters';
-                        catalog.filters.statusFilter = null;
                         catalog.loadCatalog(libraryProvider: library);
                       },
                     ),
@@ -710,7 +707,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       isSelected: catalog.filters.ordering == '-total_views',
                       onTap: () {
                         catalog.filters.ordering = '-total_views';
-                        catalog.filters.statusFilter = null;
                         catalog.loadCatalog(libraryProvider: library);
                       },
                     ),
@@ -719,8 +715,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       label: '⚡ Онгоинги',
                       isSelected: catalog.filters.statusFilter == 'ongoing',
                       onTap: () {
-                        catalog.filters.statusFilter = catalog.filters.statusFilter == 'ongoing' ? null : 'ongoing';
-                        catalog.applyLocalFilters(library);
+                        catalog.filters.statusFilter =
+                            catalog.filters.statusFilter == 'ongoing' ? null : 'ongoing';
+                        catalog.loadCatalog(libraryProvider: library);
                       },
                     ),
                     const SizedBox(width: 8),
@@ -728,8 +725,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       label: '✅ Завершенные',
                       isSelected: catalog.filters.statusFilter == 'completed',
                       onTap: () {
-                        catalog.filters.statusFilter = catalog.filters.statusFilter == 'completed' ? null : 'completed';
-                        catalog.applyLocalFilters(library);
+                        catalog.filters.statusFilter =
+                            catalog.filters.statusFilter == 'completed' ? null : 'completed';
+                        catalog.loadCatalog(libraryProvider: library);
                       },
                     ),
                   ],

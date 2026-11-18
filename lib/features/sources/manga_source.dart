@@ -35,7 +35,44 @@ abstract class MangaSource {
 
   Future<String> getDescription(String mangaId) async => '';
 
+  /// Optional rich metadata fetch (status, genres, description, cover) for detail screens.
+  Future<Manga?> getMangaDetails(Manga manga) async => null;
+
   Future<Map<String, String>> getHeaders() async => const {};
 
   Future<Uint8List?> fetchImage(String url) async => null;
+
+  /// Applies [CatalogFilters.statusFilter] and [CatalogFilters.ordering] on an
+  /// in-memory or fallback manga list uniformly across built-in sources.
+  static List<Manga> applyLocalOrderingAndStatus(
+    List<Manga> items,
+    CatalogFilters filters,
+  ) {
+    final filtered = items.where((m) {
+      if (filters.statusFilter != null) {
+        final s = m.status.toLowerCase();
+        if (s.isNotEmpty && s != 'unknown') {
+          if (filters.statusFilter == 'ongoing' && m.statusLabel != 'Онгоинг') return false;
+          if (filters.statusFilter == 'completed' && m.statusLabel != 'Закончен') return false;
+          if (filters.statusFilter == 'hiatus' && m.statusLabel != 'Заморожен') return false;
+        }
+      }
+      return true;
+    }).toList();
+
+    switch (filters.ordering) {
+      case '-id':
+        filtered.sort((a, b) => (b.releaseYear ?? 0).compareTo(a.releaseYear ?? 0));
+        break;
+      case '-count_chapters':
+        filtered.sort((a, b) => b.totalChapters.compareTo(a.totalChapters));
+        break;
+      case '-total_views':
+      case '-rating':
+      default:
+        filtered.sort((a, b) => b.ratingScore.compareTo(a.ratingScore));
+        break;
+    }
+    return filtered;
+  }
 }

@@ -185,7 +185,7 @@ class AsuraScansSource extends MangaSource {
         return true;
       }).toList();
 
-      return filtered;
+      return MangaSource.applyLocalOrderingAndStatus(filtered, filters);
     } catch (e) {
       debugPrint('AsuraScans error: $e');
       return _curatedAsuraManhwa;

@@ -201,5 +201,28 @@ void main() {
       expect(log.last.arguments['type'], equals('manhwa'));
       expect(page.items.length, equals(1));
     });
+
+    test('ExtensionMangaSource passes ordering and status over bridge', () async {
+      final bridge = NativeExtensionsBridge.forTesting();
+      final source = ExtensionMangaSource(
+        source: const KeiyoushiSource(
+          id: '2499283573021234567',
+          name: 'Test Source',
+          language: 'ru',
+          homeUrl: 'https://example.com',
+        ),
+        packageName: 'eu.kanade.tachiyomi.extension.ru.test',
+        bridge: bridge,
+      );
+
+      final filters = CatalogFilters(
+        ordering: '-count_chapters',
+        statusFilter: 'completed',
+      );
+
+      await source.getCatalogPage(filters: filters, page: 1);
+      expect(log.last.arguments['ordering'], equals('-count_chapters'));
+      expect(log.last.arguments['status'], equals('completed'));
+    });
   });
 }

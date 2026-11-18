@@ -56,9 +56,12 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
   bool _isLoadingChapters = true;
   String? _chaptersErrorMessage;
   String? _description;
+  Manga? _detailedManga;
   NovelBook? _originalNovel;
   ReaderMode _savedReaderMode = ReaderMode.auto;
   bool _isOpeningReader = false;
+
+  Manga get _effectiveManga => _detailedManga ?? widget.manga;
 
   @override
   void initState() {
@@ -121,10 +124,14 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
       }
 
       final list = await source.getChapters(widget.manga.id);
-      final desc = await source.getDescription(widget.manga.id);
+      final detailed = await source.getMangaDetails(widget.manga);
+      final desc = detailed?.description.isNotEmpty == true
+          ? detailed!.description
+          : await source.getDescription(widget.manga.id);
       if (mounted) {
         setState(() {
           _chapters = ChapterSelection.orderedChapters(list);
+          if (detailed != null) _detailedManga = detailed;
           if (desc.isNotEmpty) _description = desc;
         });
       }
@@ -153,10 +160,10 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
 
     try {
       final mode = await ReaderModeResolver.resolveEffectiveMode(
-        manga: widget.manga,
+        manga: _effectiveManga,
         source: _source,
         sampleChapterId: chapter.id,
-        isMetadataWebtoon: MangaDetailScreen.isWebtoonManga(widget.manga),
+        isMetadataWebtoon: MangaDetailScreen.isWebtoonManga(_effectiveManga),
       );
 
       if (!mounted) return;
@@ -166,7 +173,7 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
           context,
           MaterialPageRoute(
             builder: (_) => WebtoonReaderScreen(
-              manga: widget.manga,
+              manga: _effectiveManga,
               chapter: chapter,
               chapters: _chapters,
             ),
@@ -177,7 +184,7 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
           context,
           MaterialPageRoute(
             builder: (_) => PagedReaderScreen(
-              manga: widget.manga,
+              manga: _effectiveManga,
               chapter: chapter,
               chapters: _chapters,
             ),
@@ -409,10 +416,10 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
                       runSpacing: 8,
                       children: [
                         ShadcnBadge(
-                          label: widget.manga.typeLabel,
+                          label: _effectiveManga.typeLabel,
                           variant: BadgeVariant.secondary,
                         ),
-                        if (widget.manga.isLicensed)
+                        if (_effectiveManga.isLicensed)
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                             decoration: BoxDecoration(
@@ -429,20 +436,21 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
                               ),
                             ),
                           ),
+                        if (_effectiveManga.statusLabel != 'Неизвестно')
+                          ShadcnBadge(
+                            label: _effectiveManga.statusLabel,
+                            variant: BadgeVariant.outline,
+                          ),
                         ShadcnBadge(
-                          label: widget.manga.statusLabel,
-                          variant: BadgeVariant.outline,
-                        ),
-                        ShadcnBadge(
-                          label: '${widget.manga.totalChapters > 0 ? widget.manga.totalChapters : _chapters.length} глав',
+                          label: '${_effectiveManga.totalChapters > 0 ? _effectiveManga.totalChapters : _chapters.length} глав',
                           variant: BadgeVariant.secondary,
                         ),
                         ShadcnBadge(
-                          label: widget.manga.ratingLabel,
+                          label: _effectiveManga.ratingLabel,
                           variant: BadgeVariant.rating,
                         ),
                         ShadcnBadge(
-                          label: '★ ${widget.manga.ratingScore}',
+                          label: '★ ${_effectiveManga.ratingScore}',
                           variant: BadgeVariant.outline,
                         ),
                         if (hasProgress)

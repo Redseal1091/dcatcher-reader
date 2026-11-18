@@ -30,6 +30,8 @@ class _MangaCardState extends State<MangaCard> {
         return const Color(0xFF10B981); // Emerald
       case 'Заморожен':
         return const Color(0xFFF59E0B); // Amber
+      case 'Неизвестно':
+        return ShadcnColors.mutedForeground;
       case 'Онгоинг':
       default:
         return const Color(0xFF38BDF8); // Sky blue
@@ -202,29 +204,33 @@ class _MangaCardState extends State<MangaCard> {
                       const SizedBox(height: 4),
                       Row(
                         children: [
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: BoxDecoration(
-                              color: statusColor,
-                              shape: BoxShape.circle,
+                          if (manga.statusLabel != 'Неизвестно') ...[
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: BoxDecoration(
+                                color: statusColor,
+                                shape: BoxShape.circle,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 5),
-                          Text(
-                            manga.statusLabel,
-                            style: TextStyle(
-                              color: statusColor,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
+                            const SizedBox(width: 5),
+                            Text(
+                              manga.statusLabel,
+                              style: TextStyle(
+                                color: statusColor,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 4),
-                          const Text('•', style: TextStyle(color: ShadcnColors.border, fontSize: 10)),
-                          const SizedBox(width: 4),
+                            const SizedBox(width: 4),
+                            const Text('•', style: TextStyle(color: ShadcnColors.border, fontSize: 10)),
+                            const SizedBox(width: 4),
+                          ],
                           Expanded(
                             child: Text(
-                              manga.genres.isNotEmpty ? manga.genres.first : 'Комикс',
+                              manga.genres.isNotEmpty
+                                  ? manga.genres.first
+                                  : (manga.type != PublicationType.all ? manga.typeLabel : 'Комикс'),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(

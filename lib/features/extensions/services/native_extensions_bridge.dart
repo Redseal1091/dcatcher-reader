@@ -92,6 +92,8 @@ class NativeExtensionsBridge {
     int page = 1,
     String? query,
     String? type,
+    String? ordering,
+    String? status,
     List<String>? includedGenres,
     List<String>? excludedGenres,
   }) async {
@@ -101,6 +103,8 @@ class NativeExtensionsBridge {
       'page': page,
       if (query != null && query.isNotEmpty) 'query': query,
       if (type != null && type.isNotEmpty) 'type': type,
+      if (ordering != null && ordering.isNotEmpty) 'ordering': ordering,
+      if (status != null && status.isNotEmpty) 'status': status,
       if (includedGenres != null && includedGenres.isNotEmpty) 'includedGenres': includedGenres,
       if (excludedGenres != null && excludedGenres.isNotEmpty) 'excludedGenres': excludedGenres,
     });

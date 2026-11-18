@@ -48,8 +48,10 @@ class Manga {
     final s = status.toLowerCase();
     if (s.contains('закончен') || s.contains('завершен') || s.contains('complete')) {
       return 'Закончен';
-    } else if (s.contains('заморожен') || s.contains('приостановлен') || s.contains('hiatus')) {
+    } else if (s.contains('заморожен') || s.contains('приостановлен') || s.contains('hiatus') || s.contains('cancel')) {
       return 'Заморожен';
+    } else if (s == 'unknown' || s.isEmpty) {
+      return 'Неизвестно';
     } else {
       return 'Онгоинг';
     }

@@ -32,6 +32,8 @@ class MockMappingBridge extends NativeExtensionsBridge {
     int page = 1,
     String? query,
     String? type,
+    String? ordering,
+    String? status,
     List<String>? includedGenres,
     List<String>? excludedGenres,
   }) async {

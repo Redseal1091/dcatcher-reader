@@ -80,6 +80,9 @@ class RemangaSource extends MangaSource {
     if (!filters.contentRatings.contains(manga.contentRating)) {
       return false;
     }
+    if (filters.statusFilter != null && manga.status != filters.statusFilter) {
+      return false;
+    }
     return true;
   }
 

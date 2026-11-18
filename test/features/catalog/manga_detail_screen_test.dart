@@ -255,5 +255,49 @@ void main() {
       expect(find.textContaining('Ошибка при загрузке глав'), findsNothing);
       expect(find.textContaining('Глава 1: Пробуждение'), findsOneWidget);
     }, timeout: const Timeout(Duration(seconds: 15)));
+
+    testWidgets('Refreshes status badge from getMangaDetails when catalog item has unknown status', (tester) async {
+      final mockBridge = MockDetailBridge(
+        shouldThrow: false,
+        chapters: const [],
+      );
+      final source = ExtensionMangaSource(
+        source: const KeiyoushiSource(
+          id: 'detail_status_source',
+          name: 'Test Source',
+          language: 'ru',
+          homeUrl: 'https://test.source',
+        ),
+        packageName: 'tachiyomi.test',
+        bridge: mockBridge,
+      );
+      SourceManager.setMockSources([source]);
+
+      const manga = Manga(
+        id: 'detail_status_source::/manga/42',
+        title: 'Status Refresh Title',
+        description: '',
+        coverUrl: '',
+        type: PublicationType.all,
+        contentRating: ContentRating.safe,
+        status: 'unknown',
+        sourceId: 'detail_status_source',
+      );
+
+      final library = LibraryProvider();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChangeNotifierProvider<LibraryProvider>.value(
+            value: library,
+            child: const MangaDetailScreen(manga: manga),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // MockDetailBridge returns status='1' -> refreshed badge must show 'Онгоинг', never 'Неизвестно'
+      expect(find.text('Онгоинг'), findsOneWidget);
+      expect(find.text('Неизвестно'), findsNothing);
+    });
   });
 }

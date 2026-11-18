@@ -147,9 +147,13 @@ class CatalogProvider extends ChangeNotifier {
     bool matchesFilters(Manga manga) {
       if (_filters.hideLicensed && manga.isLicensed) return false;
       if (_filters.statusFilter != null) {
-        if (_filters.statusFilter == 'ongoing' && manga.statusLabel != 'Онгоинг') return false;
-        if (_filters.statusFilter == 'completed' && manga.statusLabel != 'Закончен') return false;
-        if (_filters.statusFilter == 'hiatus' && manga.statusLabel != 'Заморожен') return false;
+        final s = manga.status.toLowerCase();
+        // Trust remote source results when status isn't provided on catalog cards.
+        if (s.isNotEmpty && s != 'unknown') {
+          if (_filters.statusFilter == 'ongoing' && manga.statusLabel != 'Онгоинг') return false;
+          if (_filters.statusFilter == 'completed' && manga.statusLabel != 'Закончен') return false;
+          if (_filters.statusFilter == 'hiatus' && manga.statusLabel != 'Заморожен') return false;
+        }
       }
       if (_filters.publicationTypes.isNotEmpty &&
           !_filters.publicationTypes.contains(PublicationType.all)) {

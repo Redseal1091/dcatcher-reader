@@ -488,13 +488,170 @@ object SourceOperations {
         return anyApplied
     }
 
+    private fun findBestOptionIndex(options: List<String>, keywordPasses: List<List<String>>): Int {
+        for (keywords in keywordPasses) {
+            for (i in options.indices) {
+                val clean = options[i].trim().lowercase()
+                if (keywords.any { it == clean }) return i
+            }
+            for (i in options.indices) {
+                val clean = options[i].trim().lowercase()
+                val tokens = clean.split(Regex("[^a-zA-Zа-яА-ЯёЁ0-9]+")).filter { it.isNotEmpty() }
+                if (keywords.any { kw -> tokens.contains(kw) || (kw.length >= 4 && clean.contains(kw)) }) {
+                    return i
+                }
+            }
+        }
+        return -1
+    }
+
+    fun applyStatusFilter(filterList: FilterList, status: String?): Boolean {
+        if (status.isNullOrBlank()) return false
+        val normalized = status.trim().lowercase()
+
+        val keywordPasses: List<List<String>> = when (normalized) {
+            "completed" -> listOf(
+                listOf("завершен", "завершён", "закончен", "completed", "complete", "done", "finished"),
+                listOf("выпуск завершен", "publishing finished")
+            )
+            "ongoing" -> listOf(
+                listOf("онгоинг", "продолжается", "выходит", "ongoing", "publishing", "в процессе")
+            )
+            "hiatus" -> listOf(
+                listOf("заморожен", "приостановлен", "hiatus", "on hiatus", "frozen", "заброшен")
+            )
+            else -> emptyList()
+        }
+        if (keywordPasses.isEmpty()) return false
+
+        val statusGroupNames = setOf("статус", "status", "состояние", "статус тайтла", "статус выпуска")
+
+        fun applyToGroup(group: Filter.Group<*>): Boolean {
+            val children = (group.state as? List<*>)?.filterIsInstance<Filter<*>>() ?: return false
+            val idx = findBestOptionIndex(children.map { it.name }, keywordPasses)
+            if (idx == -1) return false
+            for (i in children.indices) {
+                val isTarget = i == idx
+                when (val child = children[i]) {
+                    is Filter.CheckBox -> child.state = isTarget
+                    is Filter.TriState -> child.state =
+                        if (isTarget) Filter.TriState.STATE_INCLUDE else Filter.TriState.STATE_IGNORE
+                    else -> {}
+                }
+            }
+            return true
+        }
+
+        fun applyToSelect(select: Filter.Select<*>): Boolean {
+            val idx = findBestOptionIndex(select.values.map { it.toString() }, keywordPasses)
+            if (idx == -1) return false
+            select.state = idx
+            return true
+        }
+
+        // Priority 1: Explicit title status groups/selects (avoiding "Статус перевода")
+        for (filter in filterList) {
+            val fName = filter.name.trim().lowercase()
+            if (fName.contains("перевод") || fName.contains("translation")) continue
+            if (statusGroupNames.any { fName == it || fName.contains(it) }) {
+                when (filter) {
+                    is Filter.Group<*> -> if (applyToGroup(filter)) return true
+                    is Filter.Select<*> -> if (applyToSelect(filter)) return true
+                    else -> {}
+                }
+            }
+        }
+
+        // Priority 2: Any non-translation group/select with matching status option
+        for (filter in filterList) {
+            val fName = filter.name.trim().lowercase()
+            if (fName.contains("перевод") || fName.contains("translation") || fName.contains("возраст")) continue
+            when (filter) {
+                is Filter.Group<*> -> if (applyToGroup(filter)) return true
+                is Filter.Select<*> -> if (applyToSelect(filter)) return true
+                else -> {}
+            }
+        }
+
+        return false
+    }
+
+    fun applySortFilter(filterList: FilterList, ordering: String?): Boolean {
+        if (ordering.isNullOrBlank()) return false
+        val normalized = ordering.trim().lowercase()
+
+        val keywordPasses: List<List<String>> = when (normalized) {
+            "-id" -> listOf(
+                listOf(
+                    "по новинкам", "новинки", "новинкам",
+                    "дате создания", "по дате создания", "дата создания",
+                    "дате добавления", "по дате добавления", "дате публикации",
+                    "created", "newest", "new"
+                ),
+                listOf(
+                    "обновленные", "обновлённые", "по дате обновления",
+                    "дате последней главы", "последнему обновлению",
+                    "latest", "updated", "recent"
+                )
+            )
+            "-count_chapters" -> listOf(
+                listOf("по главам", "главам", "количеству глав", "кол-ву глав", "chapters", "chapter count")
+            )
+            "-total_views" -> listOf(
+                listOf("по просмотрам", "просмотрам", "просмотры", "views", "most viewed"),
+                listOf("популярные", "популярности", "popular")
+            )
+            "-rating" -> listOf(
+                listOf("популярные", "популярности", "по рейтингу", "рейтингу", "рейтинг", "popular", "rating")
+            )
+            else -> emptyList()
+        }
+        if (keywordPasses.isEmpty()) return false
+
+        val sortNames = listOf("сорт", "sort", "порядок", "order", "упорядоч")
+        val sortOptionIndicators = listOf(
+            "популяр", "рейтинг", "новинк", "обновлен", "просмотр", "дате соз", "главам",
+            "popular", "rating", "latest", "views", "chapters", "created"
+        )
+
+        for (filter in filterList) {
+            if (filter is Filter.Sort) {
+                val idx = findBestOptionIndex(filter.values.toList(), keywordPasses)
+                if (idx != -1) {
+                    filter.state = Filter.Sort.Selection(idx, ascending = false)
+                    return true
+                }
+            }
+        }
+
+        for (filter in filterList) {
+            if (filter is Filter.Select<*>) {
+                val fName = filter.name.trim().lowercase()
+                val options = filter.values.map { it.toString() }
+                val looksLikeSort = sortNames.any { fName.contains(it) } ||
+                    options.any { opt -> sortOptionIndicators.any { ind -> opt.lowercase().contains(ind) } }
+                if (!looksLikeSort) continue
+
+                val idx = findBestOptionIndex(options, keywordPasses)
+                if (idx != -1) {
+                    filter.state = idx
+                    return true
+                }
+            }
+        }
+
+        return false
+    }
+
     suspend fun getCatalog(
         source: Source,
         page: Int,
         query: String?,
         type: String? = null,
         includedGenres: List<String>? = null,
-        excludedGenres: List<String>? = null
+        excludedGenres: List<String>? = null,
+        ordering: String? = null,
+        status: String? = null
     ): Map<String, Any?> = withContext(Dispatchers.IO) {
         val filterList = try {
             source.getFilterList()
@@ -504,10 +661,15 @@ object SourceOperations {
 
         val hasTypeFilter = applyTypeFilter(filterList, type)
         val hasGenreFilter = applyGenreFilter(filterList, includedGenres, excludedGenres)
+        val hasStatusFilter = applyStatusFilter(filterList, status)
+        val isNonDefaultOrdering = !ordering.isNullOrBlank() && ordering != "-rating"
+        val hasSortFilter = if (isNonDefaultOrdering) applySortFilter(filterList, ordering) else false
         val hasQuery = !query.isNullOrBlank()
 
-        val mangasPage = if (hasQuery || hasTypeFilter || hasGenreFilter) {
+        val mangasPage = if (hasQuery || hasTypeFilter || hasGenreFilter || hasStatusFilter || hasSortFilter) {
             source.getSearchManga(page, query ?: "", filterList)
+        } else if (ordering == "-id") {
+            source.getLatestUpdates(page)
         } else {
             source.getPopularManga(page)
         }

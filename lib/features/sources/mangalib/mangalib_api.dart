@@ -95,17 +95,20 @@ class MangaLibSource extends MangaSource {
     int offset = 0,
     int limit = 20,
   }) async {
-    return _curatedMangaLib.where((m) {
-      if (!filters.publicationTypes.contains(m.type)) return false;
-      if (!filters.contentRatings.contains(m.contentRating)) return false;
-      if (filters.searchQuery.trim().isNotEmpty) {
-        final q = filters.searchQuery.trim().toLowerCase();
-        final inTitle = m.title.toLowerCase().contains(q);
-        final inAlt = m.altTitle?.toLowerCase().contains(q) ?? false;
-        return inTitle || inAlt;
-      }
-      return true;
-    }).toList();
+    return MangaSource.applyLocalOrderingAndStatus(
+      _curatedMangaLib.where((m) {
+        if (!filters.publicationTypes.contains(m.type)) return false;
+        if (!filters.contentRatings.contains(m.contentRating)) return false;
+        if (filters.searchQuery.trim().isNotEmpty) {
+          final q = filters.searchQuery.trim().toLowerCase();
+          final inTitle = m.title.toLowerCase().contains(q);
+          final inAlt = m.altTitle?.toLowerCase().contains(q) ?? false;
+          return inTitle || inAlt;
+        }
+        return true;
+      }).toList(),
+      filters,
+    );
   }
 
   @override

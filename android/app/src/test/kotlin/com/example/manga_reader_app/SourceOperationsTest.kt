@@ -741,4 +741,104 @@ class SourceOperationsTest {
             assertTrue(e.message?.contains("400") == true)
         }
     }
+
+    private class TestSort(
+        name: String,
+        values: Array<String>,
+        state: Selection? = Selection(0, false)
+    ) : Filter.Sort(name, values, state)
+
+    @Test
+    fun testApplyStatusFilterMangaBuffAndInkStoryStyle() {
+        val translationStatus = TestGroup(
+            "Статус перевода",
+            listOf(TestCheckBox("Завершен"), TestCheckBox("Продолжается"))
+        )
+        val titleStatus = TestGroup(
+            "Статус",
+            listOf(
+                TestCheckBox("Анонс"),
+                TestCheckBox("Онгоинг"),
+                TestCheckBox("Завершен"),
+                TestCheckBox("Заморожен")
+            )
+        )
+        val filterList = FilterList(translationStatus, titleStatus)
+
+        assertTrue(SourceOperations.applyStatusFilter(filterList, "completed"))
+        val boxes = titleStatus.state.filterIsInstance<Filter.CheckBox>()
+        assertFalse(boxes[0].state)
+        assertFalse(boxes[1].state)
+        assertTrue(boxes[2].state) // Завершен
+        assertFalse(boxes[3].state)
+        // Must NOT touch "Статус перевода"
+        assertFalse((translationStatus.state[0] as Filter.CheckBox).state)
+
+        assertTrue(SourceOperations.applyStatusFilter(filterList, "ongoing"))
+        assertTrue(boxes[1].state) // Онгоинг
+        assertFalse(boxes[2].state)
+    }
+
+    @Test
+    fun testApplySortFilterInkStorySortAndMangaBuffSelect() {
+        // InkStory style Filter.Sort
+        val inkSort = TestSort(
+            "Сортировать по",
+            arrayOf("Просмотрам", "Лайкам", "Главам", "Рейтингу", "Дате создания")
+        )
+        val inkFilters = FilterList(inkSort)
+
+        assertTrue(SourceOperations.applySortFilter(inkFilters, "-id"))
+        assertEquals(Filter.Sort.Selection(4, false), inkSort.state) // Дате создания
+
+        assertTrue(SourceOperations.applySortFilter(inkFilters, "-count_chapters"))
+        assertEquals(Filter.Sort.Selection(2, false), inkSort.state) // Главам
+
+        assertTrue(SourceOperations.applySortFilter(inkFilters, "-total_views"))
+        assertEquals(Filter.Sort.Selection(0, false), inkSort.state) // Просмотрам
+
+        // MangaBuff style Filter.Select
+        val mbSort = TestSelect(
+            "Сортировать по",
+            arrayOf("Популярные", "Обновленные", "По рейтингу", "По новинкам")
+        )
+        val mbFilters = FilterList(mbSort)
+
+        assertTrue(SourceOperations.applySortFilter(mbFilters, "-id"))
+        assertEquals(3, mbSort.state) // По новинкам
+
+        assertTrue(SourceOperations.applySortFilter(mbFilters, "-total_views"))
+        assertEquals(0, mbSort.state) // Популярные (real_views)
+    }
+
+    @Test
+    fun testGetCatalogStatusAndOrderingRouting() = runBlocking {
+        var searchCalled = false
+        var latestCalled = false
+
+        val sourceWithoutSort = object : MockHttpSource() {
+            override fun getFilterList(): FilterList = FilterList(
+                TestGroup("Статус", listOf(TestCheckBox("Завершен"), TestCheckBox("Продолжается")))
+            )
+
+            override suspend fun getLatestUpdates(page: Int): MangasPage {
+                latestCalled = true
+                return super.getLatestUpdates(page)
+            }
+
+            override suspend fun getSearchManga(page: Int, query: String, filters: FilterList): MangasPage {
+                searchCalled = true
+                return super.getSearchManga(page, query, filters)
+            }
+        }
+
+        // Ordering "-id" without SortFilter falls back to getLatestUpdates
+        SourceOperations.getCatalog(sourceWithoutSort, page = 1, query = null, ordering = "-id")
+        assertTrue(latestCalled)
+        assertFalse(searchCalled)
+
+        // Status "completed" triggers getSearchManga with StatusFilter applied
+        SourceOperations.getCatalog(sourceWithoutSort, page = 1, query = null, status = "completed")
+        assertTrue(searchCalled)
+    }
 }

@@ -109,6 +109,11 @@ class ExtensionMangaSource extends MangaSource {
       title: item.title,
     );
 
+    final parsedStatus = ExtensionCatalogItem.parseStatus(item.status);
+    final effectiveStatus = (parsedStatus == 'unknown' && filters.statusFilter != null)
+        ? filters.statusFilter!
+        : parsedStatus;
+
     return Manga(
       id: compoundMangaId,
       title: item.title.isNotEmpty ? item.title : 'Без названия',
@@ -117,7 +122,7 @@ class ExtensionMangaSource extends MangaSource {
       type: mangaType,
       contentRating: ContentRating.safe,
       genres: genresList,
-      status: ExtensionCatalogItem.parseStatus(item.status),
+      status: effectiveStatus,
       sourceId: id,
     );
   }
@@ -185,6 +190,8 @@ class ExtensionMangaSource extends MangaSource {
       page: page,
       query: filters.searchQuery.isNotEmpty ? filters.searchQuery : null,
       type: type,
+      ordering: filters.ordering.isNotEmpty ? filters.ordering : null,
+      status: filters.statusFilter,
       includedGenres: includedKeywords.isNotEmpty ? includedKeywords.toList() : null,
       excludedGenres: excludedKeywords.isNotEmpty ? excludedKeywords.toList() : null,
     );
@@ -230,6 +237,51 @@ class ExtensionMangaSource extends MangaSource {
       sourceId: id,
       chapterUrl: chapterUrl,
     );
+  }
+
+  @override
+  Future<Manga?> getMangaDetails(Manga manga) async {
+    try {
+      final mangaUrl = decodeUrl(id, manga.id);
+      final details = await _bridge.getMangaDetails(
+        sourceId: id,
+        mangaUrl: mangaUrl,
+      );
+      final genresList = details.genre.isNotEmpty
+          ? details.genre
+              .split(',')
+              .map((g) => g.trim())
+              .where((g) => g.isNotEmpty)
+              .toList()
+          : manga.genres;
+      final detectedType = ExtensionMangaSource.determinePublicationType(
+        genres: genresList,
+        filterTypes: const {},
+        title: details.title.isNotEmpty ? details.title : manga.title,
+      );
+      final effectiveType = detectedType != PublicationType.all ? detectedType : manga.type;
+      final parsedStatus = ExtensionCatalogItem.parseStatus(details.status);
+      final effectiveStatus = parsedStatus != 'unknown' ? parsedStatus : manga.status;
+
+      return Manga(
+        id: manga.id,
+        title: details.title.isNotEmpty ? details.title : manga.title,
+        altTitle: manga.altTitle,
+        description: details.description.isNotEmpty ? details.description : manga.description,
+        coverUrl: details.thumbnailUrl.isNotEmpty ? details.thumbnailUrl : manga.coverUrl,
+        type: effectiveType,
+        contentRating: manga.contentRating,
+        genres: genresList,
+        status: effectiveStatus,
+        ratingScore: manga.ratingScore,
+        releaseYear: manga.releaseYear,
+        isLicensed: manga.isLicensed,
+        totalChapters: manga.totalChapters,
+        sourceId: manga.sourceId,
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   @override
