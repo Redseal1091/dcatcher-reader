@@ -11,6 +11,7 @@ import '../../sources/source_manager.dart';
 import '../../library/state/library_provider.dart';
 import '../../download/download_manager.dart';
 import '../models/manga_reader_settings.dart';
+import '../widgets/reader_error_view.dart';
 import '../widgets/reader_settings_bottom_sheet.dart';
 import 'webtoon_reader_screen.dart';
 import '../services/reader_mode.dart';
@@ -262,64 +263,13 @@ class _PagedReaderScreenState extends State<PagedReaderScreen> {
               child: CircularProgressIndicator(),
             )
           else if (_hasError || _pageUrls.isEmpty)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      _pageUrls.isEmpty && (_errorMessage?.contains('не найдены') ?? false)
-                          ? Icons.menu_book
-                          : Icons.error_outline_rounded,
-                      size: 48,
-                      color: _pageUrls.isEmpty && (_errorMessage?.contains('не найдены') ?? false)
-                          ? ShadcnColors.mutedForeground
-                          : ShadcnColors.exclude,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      _pageUrls.isEmpty && (_errorMessage?.contains('не найдены') ?? false)
-                          ? 'Страницы не найдены'
-                          : 'Ошибка загрузки страниц',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: ShadcnColors.foreground,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _errorMessage ?? 'Не удалось получить страницы главы.',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: ShadcnColors.mutedForeground,
-                        fontSize: 13,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: ShadcnColors.primary,
-                        foregroundColor: ShadcnColors.primaryForeground,
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                      ),
-                      onPressed: _loadPages,
-                      icon: const Icon(Icons.refresh, size: 18),
-                      label: const Text('Повторить попытку'),
-                    ),
-                    const SizedBox(height: 12),
-                    TextButton(
-                      style: TextButton.styleFrom(
-                        foregroundColor: ShadcnColors.mutedForeground,
-                      ),
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Назад к списку глав'),
-                    ),
-                  ],
-                ),
-              ),
+            ReaderErrorView(
+              sourceId: widget.manga.sourceId,
+              errorMessage: _errorMessage,
+              isPagesEmpty: _pageUrls.isEmpty,
+              defaultMessage: 'Не удалось получить страницы главы.',
+              onRetry: _loadPages,
+              onBack: () => Navigator.pop(context),
             )
           else
             GestureDetector(
